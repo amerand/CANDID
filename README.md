@@ -1,4 +1,4 @@
-**C**ompanion **A**nalysis and **N**on-**D**etection in **I**nterferometric **D**ata
+# [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 
 This is a suite of tools to find faint companion around star in interferometric
 data in the OIFITS format.
