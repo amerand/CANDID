@@ -1,11 +1,6 @@
-try:
-    import numpy as np
-except:
-    print 'ERROR: numpoy required!'
-try:
-    from matplotlib import pyplot as plt
-except:
-    print 'ERROR: matplotlib is required!'
+import numpy as np
+from matplotlib import pyplot as plt
+
 _fitsLoaded=False
 try:
     from astropy.io import fits
@@ -21,15 +16,10 @@ if not _fitsLoaded:
     print 'ERROR: astropy.io.fits or pyfits required!'
 
 import time
-try:
-    import scipy.special
-    import scipy.interpolate
-    import scipy.stats
-except:
-    print 'ERROR: scipy is required!'
-
+import scipy.special
+import scipy.interpolate
+import scipy.stats
 import multiprocessing
-import dpfit
 import os
 
 print """
@@ -896,6 +886,7 @@ class open:
                                       self._delta, method), callback=self._cb_nsigmaFunc)
             p.close()
             p.join()
+            # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
             self.allf3s[method] = self.f3s.copy()
 
@@ -935,6 +926,7 @@ class open:
         plt.ylim(-rmax, rmax)
 
         plt.subplot(212)
+        # -- radial profile:
         r = np.sqrt(X**2+Y**2).flatten()
         r_f3s = {}
         for k in self.allf3s.keys():
@@ -953,183 +945,6 @@ class open:
         plt.ylabel('3 $\sigma$ detection limit (flux ratio, %)')
         plt.grid()
         return
-
-# def detectionLimit(filename, observables=['cp'], diam=0.7, N=100, rmax=30, removeCompanion=None, dwavel=None, fig=0, ylim=None, plotMap=True):
-#     """
-#     method='Absil':
-#     ---------------
-#     for each position (x,y), chi2_binary(x,y,f)/Chi2_UD with increasing (f) until this ratio reaches a 3 sigma level.
-
-
-#     method=None:
-#     ------------
-#     for each position (x,y), inject a companion (f) to the data and compare the chi2_UD/chi2_binary(x,y,f) until this ratio reaches a 3 sigma level.
-
-#     """
-#     global _chi2Data, _rawData, _delta
-
-#     if isinstance(filename, list):
-#         _rawData, _delta = [], []
-#         for f in filename:
-#             tmp = loadOifits2chi2Data(f, observables)
-#             _rawData.extend(tmp[0])
-#             _delta.extend(tmp[0])
-#     else:
-#         _rawData, _delta = loadOifits2chi2Data(filename, observables)
-
-#     if not removeCompanion is None:
-#         # -- 'f' < 0 to actually remove a companion !!!
-#         _rawData = _injectCompanionData(_rawData, _delta, removeCompanion)
-
-#     _chi2Data = _rawData
-
-#     # -- if V2 is fitted, find first best fit diameter:
-#     if 'v2' in observables:
-#         res, err = np.array([]), np.array([])
-#         for c in _chi2Data:
-#             res = np.append(res, c[-2].flatten())
-#             err = np.append(err, c[-1].flatten())
-#         err += err==0
-#         fit = dpfit.leastsqFit(observable, _chi2Data, {'x':0, 'y':0, 'f':0, 'diam*':0.5},
-#                                 res, err, fitOnly = ['diam*'], verbose=0)
-#         print 'fitted diam: %5.3f +/- %5.3f mas'%(fit['best']['diam*'], fit['uncer']['diam*'])
-#         diam = fit['best']['diam*']
-
-#     # -- compute ndata
-#     ndata = 0
-#     for c in _rawData:
-#         ndata += len(c[-1].flatten())
-
-#     allX = np.linspace(-rmax, rmax, N)
-#     allY = np.linspace(-rmax, rmax, N)
-#     absil, compinj = [], []
-
-#     t0 = time.time()
-
-#     tmp = {'x':0.0, 'y':0.0, 'f':0.0, 'diam*':diam}
-#     if not dwavel is None:
-#         tmp['dwavel'] = dwavel
-#     _chi2_0 = _chi2Func(tmp)
-
-#     _mult = np.sqrt(2)
-#     _stop = False
-#     fratio = [0.002] # start with 0.1%
-
-#     while not _stop:
-#         f = fratio[-1]
-#         print 'fratio=%4.2f%% '%(100*f),
-#         allP = []
-#         for j,y in enumerate(allY):
-#             for i,x in enumerate(allX):
-#                 if dwavel is None:
-#                     allP.append({'x':x, 'y':y, 'f':f, 'diam*':diam})
-#                 else:
-#                     allP.append({'x':x, 'y':y, 'f':f, 'diam*':diam, 'dwavel':dwavel})
-#         # -- parallel, leave one CPU for common tasks
-#         """
-#         Absil test: compare chi2UD and chi2Bin for increasing binary contrast.
-#         The chi2UD is the same, whatever the position of the putative companion,
-#         so we do ne recompute it every time.
-#         """
-#         p = multiprocessing.Pool(multiprocessing.cpu_count()-1)
-#         allChi2 = p.map_async(_chi2Func, allP)
-#         p.close()
-#         p.join()
-#         allChi2 = np.array(allChi2.get())
-#         # -- result
-#         allChi2.resize((len(allY), len(allX)))
-#         absil.append(_nSigmas(allChi2, _chi2_0, ndata))
-
-#         """
-#         Injection test: compare chi2UD and chi2Bin for increasing binary contrast.
-#         A companion in injected at (x,y,f) and the ratio of chi2 is computed.
-#         """
-#         p = multiprocessing.Pool(multiprocessing.cpu_count()-1)
-#         allChi2 = p.map_async(_chi2Ratio, allP)
-#         p.close()
-#         p.join()
-#         allChi2 = np.array(allChi2.get())
-#         # -- result
-#         allChi2.resize((len(allY), len(allX)))
-#         compinj.append(_nSigmas(allChi2, 1, ndata))
-
-#         # -- check the 1% min nsigma in the map:
-#         crit1 = [np.percentile(absil[-1].flatten(), 1.),
-#                 np.percentile(compinj[-1].flatten(), 1.)]
-#         crit99 = [np.percentile(absil[-1].flatten(), 99.),
-#                 np.percentile(compinj[-1].flatten(), 99.)]
-
-#         print 'Nsigma (1%%->99%%) = %3.1f->%3.1f, %3.1f->%3.1f '%(crit1[0], crit99[0], crit1[1], crit99[1])
-#         # if np.max(crit99[0]) < 3.:
-#         #     fratio.append(fratio[-1]*_mult**2)
-#         if np.min(crit1[0]) < 4:
-#             fratio.append(fratio[-1]*_mult)
-#         else:
-#             _stop = True
-
-#     # -- 3 sigma detection level, interpolation
-#     det_a = np.zeros((len(allY), len(allX)))
-#     det_i = np.zeros((len(allY), len(allX)))
-#     for i in range(len(allX)):
-#         for j in range(len(allY)):
-#             det_a[j,i] = np.interp(3.0, [r[j,i] for r in absil], fratio)
-#             det_i[j,i] = np.interp(3.0, [r[j,i] for r in compinj], fratio)
-
-#     print 'done in %3.1f s'%(time.time()-t0)
-
-#     _x, _y = np.meshgrid(allX, allY)
-
-#     r = np.sqrt(_x**2+_y**2).flatten()
-#     d_a = 100.*det_a.flatten()
-#     d_i = 100.*det_i.flatten()
-#     d_a = d_a[np.argsort(r)]
-#     d_i = d_i[np.argsort(r)]
-#     r = r[np.argsort(r)]
-#     d_a, d_i, r = d_a[r<allX.max()], d_i[r<allX.max()], r[r<allX.max()]
-#     _chi2Data, _rawData = [], []
-#     if not fig is None:
-#         plt.close(fig)
-#         if plotMap:
-#             plt.figure(fig, figsize=(12,5))
-#             plt.subplots_adjust(left=0.1, right=0.96)
-#             ax = plt.subplot(121)
-#         else:
-#             plt.figure(fig, figsize=(10,5))
-#             plt.subplots_adjust(left=0.1, right=0.96)
-#             ax = plt.subplot(111)
-#         title = os.path.basename(filename)+'\nObservables: '+', '.join(observables)
-#         plt.title(title)
-
-#         plt.plot(r, sliding_percentile(r, d_a, 1., 50),
-#                  '-', linewidth=2, label='Absil 50%', color='r')
-#         plt.plot(r, sliding_percentile(r, d_a, 1., 90),
-#                  '-', linewidth=2, label='Absil 90%', linestyle='dashed',
-#                  color='r')
-#         plt.plot(r, sliding_percentile(r, d_i, 1., 50),
-#                  '-', linewidth=2, label='Comp.Inj. 50%', color='b')
-#         plt.plot(r, sliding_percentile(r, d_i, 1., 90),
-#                  '-', linewidth=2, label='Comp.Inj. 90%', linestyle='dashed',
-#                  color='b')
-
-#         plt.xlabel('radial distance (mas)')
-#         plt.ylabel('detection level (contrast, %)')
-#         plt.xlim(0, allX.max())
-#         if not ylim is None:
-#             plt.ylim(ylim[0], ylim[1])
-#         plt.legend(loc='upper center', ncol=2)
-#         plt.grid()
-#         if plotMap:
-#             plt.subplot(122)
-#             plt.pcolormesh(_x, _y, 100*det_i, cmap='jet')
-#             plt.colorbar()
-#             plt.title('flux ratio 3$\sigma$ detection (%)')
-#             plt.xlabel('x (mas)')
-#             plt.ylabel('y (mas)')
-
-
-#     else:
-#         return {'r':r, 'd_a':d_a, 'd_i':d_i}
-#     # ----
 
 def sliding_percentile(x, y, dx, percentile=50, smooth=True):
     res = np.zeros(len(y))
