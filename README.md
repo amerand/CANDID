@@ -1,8 +1,4 @@
-===================== This is CANDID ===================================
-[C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
-========================================================================
-
-https://github.com/amerand/CANDID
+**C**ompanion **A**nalysis and **N**on-**D**etection in **I**nterferometric **D**ata
 
 This is a suite of tools to find faint companion around star in interferometric
 data in the OIFITS format.
@@ -25,13 +21,16 @@ companion injection (---ref---).
 
 # Examples:
 '''python
-> import candid
-> c = candid.open(filename)
-> c.fitMap()
-> c.detectionLimit()
+import candid
+c = candid.open(filename)
+c.fitMap()
+c.detectionLimit()
 '''
 
 # Information
+
+## Link
+https://github.com/amerand/CANDID
 
 ## Developpers
 Antoine Mérand and Alexandre Gallenne
