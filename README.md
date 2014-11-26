@@ -1,23 +1,15 @@
 # [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 
-This is a suite of tools to find faint companion around star in
-interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research
-/optical-interferometry/oifits/). This tool allows to systematically search
-for faint companions in OIFITS data, and if not found, estimates the detection
-limit.
+This is a suite of tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit.
 
 ## What does it do for you?
 
 ### Companion Search
 
-The tool is based on model fitting (scipy.optimize.leastsqFit) with a grid for
-the starting point of the companion position. It unsures that all positions
-are explored by estimating a-posteriori if the grid was dense enough, and
-provide an estimate of the optimum gride density.
+The tool is based on model fitting [scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html) with a grid for the starting point of the companion position. It unsures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum gride density.
 
 ### Detection limit
-It uses Chi2 statistics to estimate the level of detection in "number of
-sigmas".
+It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
 ### Non-Detection Limit
 There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection (Gallenne et al. 2015, in preparation).
