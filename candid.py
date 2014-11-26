@@ -22,16 +22,17 @@ import scipy.stats
 import multiprocessing
 import os
 
+__version__ = '1.0 | 2014/11/25'
+
 print """
 ===================== This is CANDID ===================================
 [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 ========================================================================
-             https://github.com/amerand/CANDID
-"""
+             https://github.com/amerand/CANDID"""
+print 'version:', __version__
 # -- some general parameters:
-n_smear = 5 # number of channels for bandwidth smearing
+n_smear = 3 # number of channels for bandwidth smearing
 cmap = 'cubehelix' # color map used
-
 # -- some constants: SHOULD NOT BE CHANGED!
 c = np.pi/180/3600000.*1e6
 
@@ -87,55 +88,56 @@ def _modelObservables(obs, param, approx=False):
     for CP and T3, the third u,v coordinate is computed as u1+u2, v1+v2
     """
     global n_smear
-    #res = np.zeros((len(obs), len(obs[0][-1])))
     res = [0.0 for o in obs]
+    # -- copy parameters:
+    tmp = {k:param[k] for k in param.keys()}
     for i, o in enumerate(obs):
         if o[0]=='v2':
-            param['wavel'] = o[3]
+            tmp['wavel'] = o[3]
             if not approx:
-                if not 'dwavel' in param: # -- monochromatic
-                    res[i] = np.abs(_Vbin([o[1], o[2]], param))**2
+                if not 'dwavel' in tmp: # -- monochromatic
+                    res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
                 else: # -- bandwidth smearing
-                    wl0 = param['wavel']
+                    wl0 = tmp['wavel']
                     for x in np.linspace(-0.5, 0.5, n_smear):
-                        param['wavel'] = wl0 + x*param['dwavel']
-                        res[i] += np.abs(_Vbin([o[1], o[2]], param))**2
-                    param['wavel'] = wl0
+                        tmp['wavel'] = wl0 + x*tmp['dwavel']
+                        res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
+                    tmp['wavel'] = wl0
                     res[i] /= float(n_smear)
             else:
                 # -- approximation
                 B = np.sqrt(o[1]**2+o[2]**2)
-                if not 'dwavel' in param: # -- monochromatic
-                    phi = 2*np.pi*c*(param['x']*o[1]+param['y']*o[2])/param['wavel']
-                    Vstar = _Vud(B, param['diam*'], param['wavel'])
-                    res[i] = np.abs((Vstar + param['f']*Vstar*np.cos(phi))/\
-                                      (1 + param['f']))**2
+                if not 'dwavel' in tmp: # -- monochromatic
+                    phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
+                    Vstar = _Vud(B, tmp['diam*'], tmp['wavel'])
+                    res[i] = np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
+                                      (1 + tmp['f']))**2
                 else: # -- with bandwidth smearing:
                     for x in np.linspace(-0.5, 0.5, n_smear):
-                        phi = 2*np.pi*c*(param['x']*o[1]+param['y']*o[2])/\
-                                        (param['wavel']+x*param['dwavel'])
-                        Vstar = _Vud(B, param['diam*'],
-                                    param['wavel']+x*param['dwavel'])
-                        res[i] += np.abs((Vstar + param['f']*Vstar*np.cos(phi))/\
-                                      (1 + param['f']))**2
+                        phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/\
+                                        (tmp['wavel']+x*tmp['dwavel'])
+                        Vstar = _Vud(B, tmp['diam*'],
+                                    tmp['wavel']+x*tmp['dwavel'])
+                        res[i] += np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
+                                      (1 + tmp['f']))**2
                     res[i] /= float(n_smear)
 
         elif o[0]=='cp' or o[0]=='t3':
-            param['wavel'] = o[5]
+            tmp['wavel'] = o[5]
             if not approx: # -- approximation
-                if not 'dwavel' in param: # -- monochromatic
-                    t3 = _Vbin([o[1], o[2]], param)*\
-                         _Vbin([o[3], o[4]], param)*\
-                         np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], param))
+                if not 'dwavel' in tmp: # -- monochromatic
+                    t3 = _Vbin([o[1], o[2]], tmp)*\
+                         _Vbin([o[3], o[4]], tmp)*\
+                         np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
                 else: # -- bandwidth smearing
-                    wl0 = param['wavel']
+                    wl0 = tmp['wavel']
                     t3 = 0.0
                     for x in np.linspace(-0.5, 0.5, n_smear):
-                        param['wavel'] = wl0 + x*param['dwavel']
-                        t3 += _Vbin([o[1], o[2]], param)*\
-                              _Vbin([o[3], o[4]], param)*\
-                              np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], param))
-                    param['wavel'] = wl0
+                        tmp['wavel'] = wl0 + x*tmp['dwavel']
+                        t3 += _Vbin([o[1], o[2]], tmp)*\
+                              _Vbin([o[3], o[4]], tmp)*\
+                              np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
+                    tmp['wavel'] = wl0
                     t3 /= float(n_smear)
                 if o[0]=='cp':
                     res[i] = -np.angle(t3)
@@ -143,28 +145,28 @@ def _modelObservables(obs, param, approx=False):
                     res[i] = np.abs(t3)
             else: # -- no bandwidth smearing yet ;(
                 # -- assumes star is not resolved (first lobe)
-                phi12 = 2*np.pi*c*(param['x']*o[1]+param['y']*o[2])/param['wavel']
-                phi23 = 2*np.pi*c*(param['x']*o[3]+param['y']*o[4])/param['wavel']
-                phi31 = 2*np.pi*c*(param['x']*(o[1]+o[3])+
-                                   param['y']*(o[2]+o[4]))/param['wavel']
+                phi12 = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
+                phi23 = 2*np.pi*c*(tmp['x']*o[3]+tmp['y']*o[4])/tmp['wavel']
+                phi31 = 2*np.pi*c*(tmp['x']*(o[1]+o[3])+
+                                   tmp['y']*(o[2]+o[4]))/tmp['wavel']
                 B12 = np.sqrt(o[1]**2+o[2]**2)
                 B23 = np.sqrt(o[3]**2+o[4]**2)
                 B31 = np.sqrt((o[1]+o[3])**2+(o[2]+o[4])**2)
-                Vstar12 = np.abs(_Vud(B12, param['diam*'], param['wavel']))
-                Vstar23 = np.abs(_Vud(B23, param['diam*'], param['wavel']))
-                Vstar31 = np.abs(_Vud(B31, param['diam*'], param['wavel']))
+                Vstar12 = np.abs(_Vud(B12, tmp['diam*'], tmp['wavel']))
+                Vstar23 = np.abs(_Vud(B23, tmp['diam*'], tmp['wavel']))
+                Vstar31 = np.abs(_Vud(B31, tmp['diam*'], tmp['wavel']))
                 if o[0]=='cp':
-                    cp = param['f']*(np.sin(phi12)/Vstar12 +
+                    cp = tmp['f']*(np.sin(phi12)/Vstar12 +
                                      np.sin(phi23)/Vstar23 -
                                      np.sin(phi31)/Vstar31)
                     res[i] = -cp
                 else:
                     # --
-                    res[i] = (Vstar12*Vstar23*Vstar31 + param['f']*(
+                    res[i] = (Vstar12*Vstar23*Vstar31 + tmp['f']*(
                               Vstar12*np.cos(phi12) +
                               Vstar23*np.cos(phi23) -
                               Vstar31*np.cos(phi31))
-                              )/(1+param['f'])**3
+                              )/(1+tmp['f'])**3
     res2 = np.array([])
     for r in res:
         res2 = np.append(res2, r.flatten())
@@ -506,7 +508,7 @@ class open:
         except:
             print '!!! I expect a dict!'
         return
-    def fitMap(self, observables=['cp', 'v2', 't3'], N=40, rmax=20, rmin=0.0, diam=1.0,  fig=0, addfits=False, addCompanion=None):
+    def fitMap(self, observables=['cp', 'v2', 't3'], N=40, rmax=20, rmin=0.0, diam=1.0,  fig=0, addfits=False, addCompanion=None, removeCompanion=None):
         """
         - filename: a standard OIFITS data file
         - observables = ['cp', 'v2', 't3'] list of observables to take into account in the file. Default is all
@@ -521,11 +523,18 @@ class open:
         fr = 0.02
         observables = [o.lower() for o in observables]
         if not addCompanion is None:
-            # -- 'f' < 0 to actually remove a companion !!!
-            self._chi2Data = _injectCompanionData(self._rawData, self._delta, addCompanion)
-            print 'injected companion at', addCompanion
+            tmp = {k:addCompanion[k] for k in addCompanion.keys()}
+            tmp['f'] = np.abs(tmp['f'])
+            self._chi2Data = _injectCompanionData(self._rawData, self._delta, tmp)
         else:
             self._chi2Data = self._rawData
+        if not removeCompanion is None:
+            tmp = {k:removeCompanion[k] for k in removeCompanion.keys()}
+            tmp['f'] = -np.abs(tmp['f'])
+            self._chi2Data = _injectCompanionData(self._rawData, self._delta, tmp)
+        else:
+            self._chi2Data = self._rawData
+
 
         if self._dataheader!={}:
             print 'found injected companion at', self._dataheader
@@ -548,12 +557,13 @@ class open:
             chi2_0 = fit_0['chi2']
             print '   best fit diameter: %5.3f +- %5.3f mas'%(fit_0['best']['diam*'],
                                                            fit_0['uncer']['diam*'])
-            diam = fit_0['best']['diam*']
-            ediam = fit_0['uncer']['diam*']
+            self.diam = fit_0['best']['diam*']
+            self.ediam = fit_0['uncer']['diam*']
         else:
             chi2_0 = _chi2Func({'x':0, 'y':0, 'f':0, 'diam*':diam, 'dwavel':self.dwavel},
                                self._chi2Data, observables)
-            ediam = np.nan
+            self.diam = diam
+            self.ediam = np.nan
 
         print '    Chi2r without companion: %5.3f'%(chi2_0)
 
@@ -577,7 +587,7 @@ class open:
         for y in Y:
             for x in X:
                 if x**2+y**2>rmin**2:
-                    params.append({'diam*': diam, 'f':fr, 'x':x, 'y':y, 'dwavel':self.dwavel,
+                    params.append({'diam*': self.diam, 'f':fr, 'x':x, 'y':y, 'dwavel':self.dwavel,
                                   '_k':k})
                     # -- multiple threads:
                     p.apply_async(_fitFunc, (params[-1], self._chi2Data, observables),
@@ -630,19 +640,20 @@ class open:
                      ha='right', va='top')
 
         # -- is the grid to wide?
-        Nest = max(np.sqrt(2*len(allMin)), rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
+        self.Nest = max(np.sqrt(2*len(allMin)), rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
+        self.Nest = int(np.ceil(self.Nest))
         if len(allMin)/float(N*N)>0.5 or\
              2*rmax/float(N)*np.sqrt(2)/2>np.median([f['dist'] for f in self.allFits]):
             print '\033[41mWARNING, grid is too wide!!!',
-            print '--> try N=%d\033[0m'%(np.ceil(Nest))
+            print '--> try N=%d\033[0m'%(np.ceil(self.Nest))
             reliability = 'unreliable'
-        elif N>1.2*Nest:
+        elif N>1.2*self.Nest:
             print '\033[43mWARNING, grid may be to fine!!!',
-            print '--> N=%d should be enough\033[0m'%(np.ceil(Nest))
+            print '--> N=%d should be enough\033[0m'%(np.ceil(self.Nest))
             reliability = 'overkill'
         else:
             print '\033[42mGrid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas\033[0m'%(
-                    2*rmax/float(N), 2*rmax/Nest)
+                    2*rmax/float(N), 2*rmax/self.Nest)
             reliability = 'reliable'
 
         # == plot chi2 min map:
@@ -757,6 +768,9 @@ class open:
 
         # -- best fit parameters:
         j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2])
+        self.compParam = [x['best'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2][j]
+        self.compUncer = [x['uncer'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2][j]
+
         x0 = [x['best']['x'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2][j]
         ex0 = [x['uncer']['x'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2][j]
         y0 = [x['best']['y'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>rmin**2][j]
@@ -810,8 +824,8 @@ class open:
             hdu.header['HIERARCH INPUT RMAX'] = (rmax, 'max size of the grid, +- mas')
             hdu.header['HIERARCH INPUT OBSERVABLES'] = ', '.join(observables)
             # -- fitted parameters:
-            hdu.header['HIERARCH BEST DIAM'] = (diam, 'UD ang. diameter of star, mas')
-            hdu.header['HIERARCH BEST EDIAM'] = (ediam, 'uncertainty, mas')
+            hdu.header['HIERARCH BEST DIAM'] = (self.diam, 'UD ang. diameter of star, mas')
+            hdu.header['HIERARCH BEST EDIAM'] = (self.ediam, 'uncertainty, mas')
             hdu.header['HIERARCH BEST X'] = (x0, 'in mas')
             hdu.header['HIERARCH BEST EX'] = (ex0, 'uncertainty, in mas')
             hdu.header['HIERARCH BEST Y'] = (y0, 'in mas')
@@ -824,7 +838,7 @@ class open:
             hdu.header['HIERARCH BEST NSIGMA'] = (nsigma0, 'number of sigma of the detection')
             hdu.header['HIERARCH QUALITY GRID'] = (reliability, '')
             hdu.header['HIERARCH QUALITY ACTUAL STEP'] = (2*rmax/float(N), 'actual grid search step, in mas')
-            hdu.header['HIERARCH QUALITY OPTIMUM STEP'] = (2*rmax/float(Nest), 'optimum grid search step, in mas')
+            hdu.header['HIERARCH QUALITY OPTIMUM STEP'] = (2*rmax/float(self.Nest), 'optimum grid search step, in mas')
 
             # -- remove extension if already present in the OIDITS file:
             for i in range(len(f)-1):
@@ -853,13 +867,18 @@ class open:
         except:
             print 'did not work'
         return
-    def detectionLimit(self, observables=['cp'], N=100, rmax=30, diam=1.0, fig=1, addfit=False, addCompanion=None, rmin=1.0):
+    def detectionLimit(self, observables=['cp'], N=100, rmax=30, diam=1.0, fig=1, addfit=False, addCompanion=None, removeCompanion=None, rmin=1.0):
         observables = [o.lower() for o in observables]
-
         if not addCompanion is None:
-            # -- 'f' < 0 to actually remove a companion !!!
-            self._chi2Data = _injectCompanionData(self._rawData, self._delta, addCompanion)
-            print 'injected companion at', addCompanion
+            tmp = {k:addCompanion[k] for k in addCompanion.keys()}
+            tmp['f'] = np.abs(tmp['f'])
+            self._chi2Data = _injectCompanionData(self._rawData, self._delta, tmp)
+        else:
+            self._chi2Data = self._rawData
+        if not removeCompanion is None:
+            tmp = {k:removeCompanion[k] for k in removeCompanion.keys()}
+            tmp['f'] = -np.abs(tmp['f'])
+            self._chi2Data = _injectCompanionData(self._rawData, self._delta, tmp)
         else:
             self._chi2Data = self._rawData
 
