@@ -57,7 +57,6 @@ c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=3, removeC
 c.detectionLimit(N=4*c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=4, removeCompanion=companion)
 ```
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig4.png)
-```
 
 ## Informations
 
