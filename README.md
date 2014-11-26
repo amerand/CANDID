@@ -20,7 +20,7 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 
 * works only with a single OIFITS file. You will need an external tool to combine OIFITS files
 * works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
-* the code has been tested of OIFITS files form CHARE/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
+* the code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
 * the code use [multiprocessing](https://docs.python.org/2/library/multiprocessing.html): our experience is that it does not work properly with IPython Notebooks. [It seems to be known](https://github.com/ipython/ipython/issues/6109). However, it works fine with IPython.
 
 ## Examples:
@@ -35,7 +35,9 @@ c = candid.open('AXCir.oifits')
 
 # -- make a coarse grid fit (fast but unreliable):
 c.fitMap(N=10, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=1)
-
+```
+![Figure 1](doc/AXCir_fig.png)
+```
 # -- make an optimum grid fit based on previous run (slow):
 c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=2)
 
