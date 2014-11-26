@@ -6,7 +6,7 @@ This is a suite of tools to find faint companion around star in interferometric 
 
 ### Companion Search
 
-The tool is based on model fitting [scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html) with a grid for the starting point of the companion position. It unsures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum gride density.
+The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html)), with a grid for the starting points of the companion position. It unsures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum gride density.
 
 ### Detection limit
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
