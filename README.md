@@ -37,12 +37,12 @@ c = candid.open('AXCir.oifits')
 c.fitMap(N=10, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=1)
 ```
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig1.png)
-```
+```python
 # -- make an optimum grid fit based on previous run (slow):
 c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=2)
 ```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig2.png)
-```
+```python
 # -- store the best fit companion
 companion = c.compParam
 
