@@ -640,20 +640,20 @@ class open:
                      ha='right', va='top')
 
         # -- is the grid to wide?
-        self.Nest = max(np.sqrt(2*len(allMin)), rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
-        self.Nest = int(np.ceil(self.Nest))
+        self.Nopt = max(np.sqrt(2*len(allMin)), rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
+        self.Nopt = int(np.ceil(self.Nopt))
         if len(allMin)/float(N*N)>0.5 or\
              2*rmax/float(N)*np.sqrt(2)/2>np.median([f['dist'] for f in self.allFits]):
             print '\033[41mWARNING, grid is too wide!!!',
-            print '--> try N=%d\033[0m'%(np.ceil(self.Nest))
+            print '--> try N=%d\033[0m'%(np.ceil(self.Nopt))
             reliability = 'unreliable'
-        elif N>1.2*self.Nest:
+        elif N>1.2*self.Nopt:
             print '\033[43mWARNING, grid may be to fine!!!',
-            print '--> N=%d should be enough\033[0m'%(np.ceil(self.Nest))
+            print '--> N=%d should be enough\033[0m'%(np.ceil(self.Nopt))
             reliability = 'overkill'
         else:
             print '\033[42mGrid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas\033[0m'%(
-                    2*rmax/float(N), 2*rmax/self.Nest)
+                    2*rmax/float(N), 2*rmax/self.Nopt)
             reliability = 'reliable'
 
         # == plot chi2 min map:
@@ -838,7 +838,7 @@ class open:
             hdu.header['HIERARCH BEST NSIGMA'] = (nsigma0, 'number of sigma of the detection')
             hdu.header['HIERARCH QUALITY GRID'] = (reliability, '')
             hdu.header['HIERARCH QUALITY ACTUAL STEP'] = (2*rmax/float(N), 'actual grid search step, in mas')
-            hdu.header['HIERARCH QUALITY OPTIMUM STEP'] = (2*rmax/float(self.Nest), 'optimum grid search step, in mas')
+            hdu.header['HIERARCH QUALITY OPTIMUM STEP'] = (2*rmax/float(self.Nopt), 'optimum grid search step, in mas')
 
             # -- remove extension if already present in the OIDITS file:
             for i in range(len(f)-1):

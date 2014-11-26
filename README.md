@@ -39,7 +39,7 @@ c.fitMap(N=10, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=1)
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig1.png)
 ```python
 # -- make an optimum grid fit based on previous run (slow):
-c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=2)
+c.fitMap(N=c.Nopt, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=2)
 ```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig2.png)
 ```python
@@ -47,13 +47,13 @@ c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=2)
 companion = c.compParam
 
 # -- analytically remove companion and search again:
-c.fitMap(N=c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=3, removeCompanion=companion)
+c.fitMap(N=c.Nopt, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=3, removeCompanion=companion)
 ```
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig3.png)
 ```python
 # -- compute the detection limit, after analytically removing the companion
 # -- grid should be finer too (takes a few minutes again)
-c.detectionLimit(N=4*c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=4, removeCompanion=companion)
+c.detectionLimit(N=4*c.Nopt, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=4, removeCompanion=companion)
 ```
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/AXCir_fig4.png)
 
