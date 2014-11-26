@@ -1,9 +1,10 @@
 # [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 
 This is a suite of tools to find faint companion around star in
-interferometric data in the OIFITS format. This tool allows to systematically
-search for faint companions in OIFITS data, and if not found, estimates the
-detection limit.
+interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research
+/optical-interferometry/oifits/). This tool allows to systematically search
+for faint companions in OIFITS data, and if not found, estimates the detection
+limit.
 
 ## What does it do for you?
 
@@ -54,9 +55,9 @@ c.detectionLimit(N=4*c.Nest, rmax=35, rmin=3, observables=['cp','v2','t3'], fig=
 https://github.com/amerand/CANDID
 
 ### Developpers
-Antoine Mérand and Alexandre Gallenne
+[Antoine Mérand](mailto:amerand@eso.org) and Alexandre Gallenne
 
-### Python depencedences
+### Python dependencies
 numpy, scipy, matplotlib and pyfits (or astropy)
 
 ### LICENCE
