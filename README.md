@@ -30,7 +30,55 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 
 ## Examples:
 
-see "candidTest.py", function "AXCir".
+see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 seconds with the 'fast' option (fasr indeed, but not accurate!), and almost 6 minutes in normal mode.
+
+Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables:
+```python
+axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
+axcir.observables=['v2','cp']
+```
+
+FIG1 - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%:
+```python
+axcir.chi2Map(0.7, fig=1, fratio=0.01)
+```
+![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
+
+FIG2 - CHI2MAP with 0.7 mas step, and known parameters: diam=0.82 mas, fratio=0.9%:
+```python
+axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
+```
+![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
+
+FIG3 - FITMAP with 3.5 mas step:
+```python
+axcir.fitMap(3.5, fig=3)
+```
+![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
+
+FIG4 - FITMAP with 3.5 mas step, after removing companion
+```python
+p = {'x':6.23, 'y':-28.5, 'f':0.0089}
+axcir.fitMap(3.5, fig=4, removeCompanion=p)
+```
+![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
+
+FIG5 - DETECTION LIMIT, 1mas step
+```python
+axcir.detectionLimit(1.0, fig=5)
+```
+![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
+
+
+FIG6 - DETECTION LIMIT, 1mas step, after removing companion
+```python
+p = {'x':6.23, 'y':-28.5, 'f':0.0089}
+axcir.detectionLimit(1.0, fig=6, removeCompanion=p)
+```
+![Figure 6](https://github.com/amerand/CANDID/blob/master/doc/figure_6.png)
+
+
+
 
 ## Informations
 
