@@ -39,6 +39,7 @@ see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 
 Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables:
 ```python
 import candid
+from matplotlib import pyplot as plt
 axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
 axcir.observables=['v2','cp']
 ```
@@ -129,7 +130,7 @@ axcir.fitMap(3.5, fig=4, removeCompanion=p)
 
 ### FIG5 - DETECTION LIMIT, 1mas step
 ```python
-axcir.detectionLimit(1.0, fig=5)
+axcir.detectionLimit(1.0, fig=5); plt.subplot(212);  plt.ylim(0.2, 1.0)
 ```
 ```
  > observables: ['v2', 'cp']
@@ -148,7 +149,7 @@ axcir.detectionLimit(1.0, fig=5)
 ### FIG6 - DETECTION LIMIT, 1mas step, after removing companion
 ```python
 p = {'x':6.23, 'y':-28.5, 'f':0.0089}
-axcir.detectionLimit(1.0, fig=6, removeCompanion=p)
+axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212);  plt.ylim(0.2, 1.0)
 ```
 ```
  > observables: ['v2', 'cp']
@@ -159,7 +160,7 @@ axcir.detectionLimit(1.0, fig=6, removeCompanion=p)
  > Method: Absil
  |================================================== | 99%   0 s remaining
  > Method: injection
- |================================================== | 99%   0 s remainingg
+ |================================================== | 99%   0 s remaining
 ```
 ![Figure 6](https://github.com/amerand/CANDID/blob/master/doc/figure_6.png)
 
@@ -169,7 +170,7 @@ axcir.detectionLimit(1.0, fig=6, removeCompanion=p)
 https://github.com/amerand/CANDID
 
 ### Developpers
-[Antoine Mérand](mailto:amerand@eso.org) and Alexandre Gallenne
+[Antoine Mérand](mailto:amerand-at-eso.org) and Alexandre Gallenne
 
 ### Python dependencies
 numpy, scipy, matplotlib and pyfits (or astropy)
