@@ -3,7 +3,6 @@ import candid
 """
 import candidTest
 reload(candidTest.candid); reload(candidTest)
-
 """
 
 def AXCir(fast=False):
@@ -17,8 +16,9 @@ def AXCir(fast=False):
     candid.plt.close('all')
 
     # -- define what to test, each can be 'none', 'simple' or 'full':
-    tests = {'chi2Map':'full', 'fitMap':'full', 'detect':'full'}
+    #tests = {'chi2Map':'full', 'fitMap':'full', 'detect':'full'}
     #tests = {'chi2Map':'none', 'fitMap':'none', 'detect':'full'}
+    tests = {'chi2Map':'full', 'fitMap':'none', 'detect':'none'}
 
     if fast:
         c=2.5
@@ -41,12 +41,12 @@ def AXCir(fast=False):
 
     if tests['chi2Map'] == 'simple' or\
         tests['chi2Map'] == 'full':
-        print '\nFIG%d - CHI2MAP with 0.5 mas step, fitted diameter and fratio=1%%'%fig
+        print '\nFIG%d - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%%'%fig
         axcir.chi2Map(.7*c, fig=fig, fratio=0.01)
         fig+=1
 
     if tests['chi2Map'] == 'full':
-        print '\nFIG%d - CHI2MAP with 0.5 mas step and known parameters: diam=0.82 mas, fratio=0.9%%'%fig
+        print '\nFIG%d - CHI2MAP with 0.7 mas step and known parameters: diam=0.82 mas, fratio=0.9%%'%fig
         axcir.chi2Map(.7*c, fig=fig, diam=0.82, fratio=0.009)
         fig+=1
 
@@ -71,7 +71,7 @@ def AXCir(fast=False):
         fig+=1
 
     if tests['detect'] == 'full':
-        print '\nFIG%d - DETECTION LIMIT after removing companion'%fig
+        print '\nFIG%d - DETECTION LIMIT after removing comAXCir_panion'%fig
         # -- where companion is
         p = {'x':6.23, 'y':-28.5, 'f':0.0089}
         axcir.detectionLimit(1*c, fig=fig, removeCompanion=p)

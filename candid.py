@@ -511,7 +511,7 @@ class Open:
             self.ediam = fit_0['uncer']['diam*']
             print ' | chi2 UD = %4.3f'%self.chi2_UD
         elif not self.diam is None:
-            print ' > UD CHI2'
+            print ' > UD CHI2 (no fit!)'
             print ' | Chi2 UD for diam=%4.3fmas'%self.diam
             self.chi2_UD = _chi2Func({'x':0, 'y':0, 'f':0, 'diam*':self.diam, 'dwavel':self.dwavel},
                                self._chi2Data, self.observables)
@@ -695,7 +695,7 @@ class Open:
         self._progTime = [time.time(), time.time()]
 
         # -- parallel treatment:
-        print ' > Computing Map %dx%d'%(N, N),
+        print ' | Computing Map %dx%d'%(N, N),
         # -- estimate how long it will take, in two passes
         params, Ntest = [], 10*max(multiprocessing.cpu_count()-1,1)
         for i in range(Ntest):
@@ -731,12 +731,21 @@ class Open:
                     #self._cb_chi2Map(_chi2Func(params, self._chi2Data, self.observables))
         p.close()
         p.join()
-        print 'it actually took %d seconds'%(time.time()-t)
+        #print 'it actually took %d seconds'%(time.time()-t)
 
         # -- take care of unfitted zone, for esthetics
         self.mapChi2[self.mapChi2<=0] = self.chi2_UD
-        print ' > Plotting'
         X, Y = np.meshgrid(allX, allY)
+
+        print ' | chi2 Min: %5.2f'%(np.min(self.mapChi2))
+        print ' | at X,Y = %6.2f, %6.2f mas'%(
+                X.flatten()[np.argmin(self.mapChi2.flatten())],
+                Y.flatten()[np.argmin(self.mapChi2.flatten())])
+        print ' | Nsigma:   %5.2f'%_nSigmas(self.chi2_UD,
+                       np.minimum(np.min(self.mapChi2), self.chi2_UD),
+                       self.ndata())
+
+        print ' > Plotting'
         plt.close(fig)
         plt.figure(fig, figsize=(12,5.8))
         plt.subplots_adjust(top=0.78, bottom=0.08,
@@ -772,6 +781,7 @@ class Open:
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
         ax1.set_aspect('equal', 'datalim')
+
         return
     def _cb_fitFunc(self, r):
         """
@@ -880,7 +890,7 @@ class Open:
         p.join()
         #print 'it actually took %4.1fs'%(time.time()-t0)
 
-        print ' > Computing map of interpolated Chi2 minima'
+        print ' | Computing map of interpolated Chi2 minima'
         self.allFits = self.allFits[:k-1]
 
         for i, f in enumerate(self.allFits):
@@ -1165,7 +1175,6 @@ class Open:
         except:
             print 'ERROR: you should define rmax first!'
             return
-
         print ' > observables:', self.observables
         if not addCompanion is None:
             tmp = {k:addCompanion[k] for k in addCompanion.keys()}
@@ -1179,6 +1188,30 @@ class Open:
             self._chi2Data = self._rawData
         self.fitUD(diam)
 
+        print ' > Detection Limit Map %dx%d'%(N,N),
+
+        # -- estimate how long it will take
+        Ntest = max(multiprocessing.cpu_count()-1,1)
+        params = []
+        for k in range (Ntest):
+            params.append({'x':10*np.random.rand(),
+                           'y':10*np.random.rand(),
+                           'f':0.01, 'diam*':self.diam,
+                           'dwavel':self.dwavel})
+        # -- Absil is twice as fast as injection
+        est = 1.5*self.estimateRunTime(_detectLimit, params)
+        est *= N**2
+        print '... it should take about %d seconds'%(int(est))
+
+        if not longExecWarning is None and\
+             est>longExecWarning:
+            print " > WARNING: this will take too long. "
+            print " | Increase the global 'longExecWarning' if you want to run longer computations."
+            print " | set it to 'None' and the warning will disapear... at your own risks!"
+            return
+
+        #print 'estimated time:', est
+        t0 = time.time()
         # -- prepare grid:
         allX = np.linspace(-self.rmax, self.rmax, N)
         allY = np.linspace(-self.rmax, self.rmax, N)
@@ -1208,7 +1241,7 @@ class Open:
             # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
             self.allf3s[method] = self.f3s.copy()
-
+        print 'it actually took %4.1f seconds'%(time.time()-t0)
         print ' > Plotting'
         X, Y = np.meshgrid(allX, allY)
         vmin=min(np.min(100*self.allf3s['Absil']),
