@@ -38,6 +38,7 @@ see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 
 
 Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables:
 ```python
+import candid
 axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
 axcir.observables=['v2','cp']
 ```
@@ -46,18 +47,53 @@ FIG1 - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%:
 ```python
 axcir.chi2Map(0.7, fig=1, fratio=0.01)
 ```
+ > observables: ['v2', 'cp']
+ > UD Fit
+ | best fit diameter: 0.932 +- 0.006 mas
+ | chi2 UD = 0.975
+ | Computing Map 100x100 ... it should take about 23 seconds
+ |================================================== | 99%   0 s remainingg
+ | chi2 Min:  0.96
+ | at X,Y =   6.01, -28.64 mas
+ | Nsigma:    0.86
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
 
 FIG2 - CHI2MAP with 0.7 mas step, and known parameters: diam=0.82 mas, fratio=0.9%:
 ```python
 axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
 ```
+ | Chi2 UD for diam=0.820mas
+ |  chi2 UD = 1.168
+ | Computing Map 100x100 ... it should take about 22 seconds
+ |================================================== | 99%   0 s remainingg
+ | chi2 Min:  0.73
+ | at X,Y =   6.01, -28.64 mas
+ | Nsigma:   22.07
+
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
 FIG3 - FITMAP with 3.5 mas step:
 ```python
 axcir.fitMap(3.5, fig=3)
 ```
+ > observables: ['v2', 'cp']
+ > Preliminary analysis
+ > UD Fit
+ | best fit diameter: 0.932 +- 0.006 mas
+ | chi2 UD = 0.975
+ > Grid Fitting 20x20: ... it should take about 79 seconds
+ |================================================== | 99%   0 s remaining
+ | Computing map of interpolated Chi2 minima
+ | 118 individual minima for 275 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.3, 2.6, 5.5 mas
+ | Grid has the correct steps of 3.50mas, optimimum step size found to be 3.00mas
+ > BEST FIT 0: chi2= 0.73
+ |     x= 6.23e+00 +- 5.82e-02
+ |     y= -2.85e+01 +- 7.99e-02
+ |     f= -8.90e-03 +- 4.04e-04
+ | diam*= 8.22e-01 +- 7.90e-03
+ | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.16
+
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
 
 FIG4 - FITMAP with 3.5 mas step, after removing companion
