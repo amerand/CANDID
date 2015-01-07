@@ -43,7 +43,7 @@ axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
 axcir.observables=['v2','cp']
 ```
 
-FIG1 - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%:
+### FIG1 - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%:
 ```python
 axcir.chi2Map(0.7, fig=1, fratio=0.01)
 ```
@@ -60,7 +60,7 @@ axcir.chi2Map(0.7, fig=1, fratio=0.01)
 ```
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
 
-FIG2 - CHI2MAP with 0.7 mas step, and known parameters: diam=0.82 mas, fratio=0.9%:
+### FIG2 - CHI2MAP with 0.7 mas step, and known parameters: diam=0.82 mas, fratio=0.9%:
 ```python
 axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
 ```
@@ -75,7 +75,7 @@ axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
 ```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
-FIG3 - FITMAP with 3.5 mas step:
+### FIG3 - FITMAP with 3.5 mas step:
 ```python
 axcir.fitMap(3.5, fig=3)
 ```
@@ -100,29 +100,68 @@ axcir.fitMap(3.5, fig=3)
 ```
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
 
-FIG4 - FITMAP with 3.5 mas step, after removing companion
+### FIG4 - FITMAP with 3.5 mas step, after removing companion
 ```python
 p = {'x':6.23, 'y':-28.5, 'f':0.0089}
 axcir.fitMap(3.5, fig=4, removeCompanion=p)
 ```
+```
+ > observables: ['v2', 'cp']
+ > Preliminary analysis
+ > UD Fit
+ | best fit diameter: 0.822 +- 0.006 mas
+ | chi2 UD = 0.750
+ > Grid Fitting 20x20: ... it should take about 143 seconds
+ |================================================== | 99%   0 s remainingg
+ | Computing map of interpolated Chi2 minima
+ | 138 individual minima for 275 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.2, 2.9, 5.5 mas
+ | Grid has the correct steps of 3.50mas, optimimum step size found to be 3.00mas
+ > BEST FIT 0: chi2= 0.70
+ |     x= 6.56e+00 +- 1.28e-01
+ |     y= 2.28e+00 +- 1.77e-01
+ |     f= 3.60e-03 +- 3.67e-04
+ | diam*= 7.58e-01 +- 9.33e-03
+ | chi2r_UD=0.75, chi2r_BIN=0.70, NDOF=1499 -> n sigma:  2.12
+```
+
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
 
-FIG5 - DETECTION LIMIT, 1mas step
+### FIG5 - DETECTION LIMIT, 1mas step
 ```python
 axcir.detectionLimit(1.0, fig=5)
 ```
+```
+ > observables: ['v2', 'cp']
+ > UD Fit
+ | best fit diameter: 0.932 +- 0.006 mas
+ | chi2 UD = 0.975
+ > Detection Limit Map 70x70 ... it should take about 112 seconds
+ > Method: Absil
+ |================================================== | 99%   0 s remaining
+ > Method: injection
+ |================================================== | 99%   0 s remaining
+```
+
 ![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
 
-
-FIG6 - DETECTION LIMIT, 1mas step, after removing companion
+### FIG6 - DETECTION LIMIT, 1mas step, after removing companion
 ```python
 p = {'x':6.23, 'y':-28.5, 'f':0.0089}
 axcir.detectionLimit(1.0, fig=6, removeCompanion=p)
 ```
+```
+ > observables: ['v2', 'cp']
+ > UD Fit
+ | best fit diameter: 0.822 +- 0.006 mas
+ | chi2 UD = 0.750
+ > Detection Limit Map 70x70 ... it should take about 109 seconds
+ > Method: Absil
+ |================================================== | 99%   0 s remaining
+ > Method: injection
+ |================================================== | 99%   0 s remainingg
+```
 ![Figure 6](https://github.com/amerand/CANDID/blob/master/doc/figure_6.png)
-
-
-
 
 ## Informations
 

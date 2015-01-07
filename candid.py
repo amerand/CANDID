@@ -22,7 +22,8 @@ import scipy.stats
 import multiprocessing
 import os
 
-__version__ = '0.1 | 2014/11/25'
+#__version__ = '0.1 | 2014/11/25'
+__version__ = '0.2 | 2015/01/07'
 
 print """
 ===================== This is CANDID ===================================
@@ -736,16 +737,15 @@ class Open:
         # -- take care of unfitted zone, for esthetics
         self.mapChi2[self.mapChi2<=0] = self.chi2_UD
         X, Y = np.meshgrid(allX, allY)
-
-        print ' | chi2 Min: %5.2f'%(np.min(self.mapChi2))
-        print ' | at X,Y = %6.2f, %6.2f mas'%(
-                X.flatten()[np.argmin(self.mapChi2.flatten())],
-                Y.flatten()[np.argmin(self.mapChi2.flatten())])
-        print ' | Nsigma:   %5.2f'%_nSigmas(self.chi2_UD,
+        x0 = X.flatten()[np.argmin(self.mapChi2.flatten())]
+        y0 = Y.flatten()[np.argmin(self.mapChi2.flatten())]
+        s0 = _nSigmas(self.chi2_UD,
                        np.minimum(np.min(self.mapChi2), self.chi2_UD),
                        self.ndata())
+        print ' | chi2 Min: %5.2f'%(np.min(self.mapChi2))
+        print ' | at X,Y = %6.2f, %6.2f mas'%(x0, y0)
+        print ' | Nsigma:   %5.2f'%s0
 
-        print ' > Plotting'
         plt.close(fig)
         plt.figure(fig, figsize=(12,5.8))
         plt.subplots_adjust(top=0.78, bottom=0.08,
@@ -781,7 +781,11 @@ class Open:
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
         ax1.set_aspect('equal', 'datalim')
-
+        plt.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
+        plt.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
+        plt.plot([x0-0.05*self.rmax, x0-0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
+        plt.plot([x0+0.05*self.rmax, x0+0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
+        plt.text(0.9*x0, 0.9*y0, r'n$\sigma$=%3.1f'%s0, color='r')
         return
     def _cb_fitFunc(self, r):
         """
@@ -1047,22 +1051,16 @@ class Open:
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print ' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD, allMin2[i]['chi2'], self.ndata()-1),
             print '-> n sigma: %5.2f'%allMin2[i]['nsigma']
-            if ii==0:
-                nsigma0 = allMin2[i]['nsigma']
+            x0 = allMin2[i]['best']['x']#+self.rmax/float(N)
+            y0 = allMin2[i]['best']['y']#+self.rmax/float(N)
+            s0 = allMin2[i]['nsigma']
+            for ax in [ax1, ax2]:
+                ax.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
+                ax.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
+                ax.plot([x0-0.05*self.rmax, x0-0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
+                ax.plot([x0+0.05*self.rmax, x0+0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
+            ax2.text(0.9*x0, 0.9*y0, r'%3.1f$\sigma$'%s0, color='r')
 
-            ax1.plot(allMin2[i]['best']['x']+self.rmax/float(N)*np.array([-1,0,1,0,-1]),
-                     allMin2[i]['best']['y']+self.rmax/float(N)*np.array([0,1,0,-1,0]),
-                     '-', linewidth=max(min(allMin2[i]['nsigma']/3., 3), 1),
-                     alpha=min(max(allMin2[i]['nsigma']/5., 0.2), .8),
-                     color='y' if ii>0 else 'r')
-            ax2.plot(allMin2[i]['best']['x']+self.rmax/float(N)*np.array([-1,0,1,0,-1]),
-                    allMin2[i]['best']['y']+self.rmax/float(N)*np.array([0,1,0,-1,0]),
-                    '-', linewidth=max(min(allMin2[i]['nsigma']/3., 3),1),
-                    alpha=min(max(allMin2[i]['nsigma']/5., 0.2), .8),
-                    color='y' if ii>0 else 'r')
-            ax2.text(allMin2[i]['best']['x'], allMin2[i]['best']['y'],
-                    r'%4.1f$\sigma$'%allMin2[i]['nsigma'], ha='left', va='bottom',
-                    color='y' if ii>0 else 'r')
         plt.xlabel(r'$\rightarrow$ E (mas)')
         plt.ylabel(r'$\rightarrow$ N (mas)')
         plt.xlim(self.rmax-self.rmax/float(N), -self.rmax+self.rmax/float(N))
@@ -1241,8 +1239,7 @@ class Open:
             # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
             self.allf3s[method] = self.f3s.copy()
-        print 'it actually took %4.1f seconds'%(time.time()-t0)
-        print ' > Plotting'
+        #print 'it actually took %4.1f seconds'%(time.time()-t0)
         X, Y = np.meshgrid(allX, allY)
         vmin=min(np.min(100*self.allf3s['Absil']),
                             np.min(100*self.allf3s['injection']))
