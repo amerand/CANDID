@@ -47,6 +47,7 @@ FIG1 - CHI2MAP with 0.7 mas step, fitted diameter and fratio=1%:
 ```python
 axcir.chi2Map(0.7, fig=1, fratio=0.01)
 ```
+```
  > observables: ['v2', 'cp']
  > UD Fit
  | best fit diameter: 0.932 +- 0.006 mas
@@ -56,11 +57,13 @@ axcir.chi2Map(0.7, fig=1, fratio=0.01)
  | chi2 Min:  0.96
  | at X,Y =   6.01, -28.64 mas
  | Nsigma:    0.86
+```
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
 
 FIG2 - CHI2MAP with 0.7 mas step, and known parameters: diam=0.82 mas, fratio=0.9%:
 ```python
 axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
+```
 ```
  | Chi2 UD for diam=0.820mas
  |  chi2 UD = 1.168
@@ -69,12 +72,13 @@ axcir.chi2Map(0.7, fig=2, diam=0.82, fratio=0.009)
  | chi2 Min:  0.73
  | at X,Y =   6.01, -28.64 mas
  | Nsigma:   22.07
-
+```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
 FIG3 - FITMAP with 3.5 mas step:
 ```python
 axcir.fitMap(3.5, fig=3)
+```
 ```
  > observables: ['v2', 'cp']
  > Preliminary analysis
@@ -93,7 +97,7 @@ axcir.fitMap(3.5, fig=3)
  |     f= -8.90e-03 +- 4.04e-04
  | diam*= 8.22e-01 +- 7.90e-03
  | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.16
-
+```
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
 
 FIG4 - FITMAP with 3.5 mas step, after removing companion
