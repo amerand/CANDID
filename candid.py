@@ -563,8 +563,7 @@ class Open:
             if hdu.header['EXTNAME']=='OI_T3':
                 ins = hdu.header['INSNAME']
                 data = hdu.data['T3PHI']*np.pi/180
-                data[hdu.data['FLAG']] = np.nan
-                # -- load data
+                data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 self._rawData.append(('cp',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
@@ -576,7 +575,7 @@ class Open:
                       data,
                       hdu.data['T3PHIERR']*np.pi/180))
                 data = hdu.data['T3AMP']*np.pi/180
-                data[hdu.data['FLAG']] = np.nan
+                data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 self._rawData.append(('t3',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
@@ -589,7 +588,7 @@ class Open:
             if hdu.header['EXTNAME']=='OI_VIS2':
                 ins = hdu.header['INSNAME']
                 data = hdu.data['VIS2DATA']
-                data[hdu.data['FLAG']] = np.nan
+                data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 self._rawData.append(('v2',
                       hdu.data['UCOORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*wavel[ins][None,:],
@@ -602,7 +601,6 @@ class Open:
         # -- compute a flatten version of all V2:
         allV2 = {'u':np.array([]), 'v':np.array([]), 'mjd':np.array([]),
                  'wl':np.array([]), 'v2':np.array([])}
-
         for r in filter(lambda x: x[0]=='v2', self._rawData):
             allV2['u'] = np.append(allV2['u'], r[1].flatten())
             allV2['v'] = np.append(allV2['v'], r[2].flatten())
@@ -623,17 +621,20 @@ class Open:
                                        (allV2['v']-r[2][i,j])**2+
                                        (allV2['wl']-r[5][i,j])**2+
                                        ((allV2['mjd']-r[6][i,j])/10000.)**2)
-                        vis1[i,j] = np.sqrt(allV2['v2'][k1])
+                        if not np.isnan(r[-2][i,j]):
+                            vis1[i,j] = np.sqrt(allV2['v2'][k1])
                         k2 = np.argmin((allV2['u']-r[3][i,j])**2+
                                        (allV2['v']-r[4][i,j])**2+
                                        (allV2['wl']-r[5][i,j])**2+
                                        ((allV2['mjd']-r[6][i,j])/10000.)**2)
-                        vis2[i,j] = np.sqrt(allV2['v2'][k2])
+                        if not np.isnan(r[-2][i,j]):
+                            vis2[i,j] = np.sqrt(allV2['v2'][k2])
                         k3 = np.argmin((allV2['u']-r[1][i,j]-r[3][i,j])**2+
                                        (allV2['v']-r[2][i,j]-r[4][i,j])**2+
                                        (allV2['wl']-r[5][i,j])**2+
                                        ((allV2['mjd']-r[6][i,j])/10000.)**2)
-                        vis3[i,j] = np.sqrt(allV2['v2'][k3])
+                        if not np.isnan(r[-2][i,j]):
+                            vis3[i,j] = np.sqrt(allV2['v2'][k3])
                 self._delta.append((vis1, vis2, vis3))
             if r[0] == 'v2':
                 self._delta.append(None)
@@ -1212,6 +1213,9 @@ class Open:
         """
         step: number of steps N in the map (map will be NxN)
         drawMaps: display the detection maps in addition to the radial profile (default)
+
+        Apart from the plots, the radial detection limits are stored in the dictionnary
+        'self.f3s'.
         """
         try:
             N = int(np.ceil(2*self.rmax/step))
@@ -1339,7 +1343,7 @@ class Open:
 
         else:
             plt.close(fig)
-            plt.figure(fig, figsize=(6,5))
+            plt.figure(fig, figsize=(8,5))
 
         # -- radial profile:
         r = np.sqrt(X**2+Y**2).flatten()
@@ -1359,7 +1363,14 @@ class Open:
         plt.legend()
         plt.xlabel('radial distance (mas)')
         plt.ylabel('f$_{3\sigma}$ (%)')
-        #plt.grid()
+        plt.grid()
+        # -- store radial profile of detection limit:
+        self.f3s = {'r(mas)':r,
+                    'Absil':100*sliding_percentile(r, r_f3s['Absil'],
+                                                   self.rmax/float(N), 90),
+                    'Injection':100*sliding_percentile(r, r_f3s['injection'],
+                                                     self.rmax/float(N), 90),
+                  }
         return
 
 def sliding_percentile(x, y, dx, percentile=50, smooth=True):
