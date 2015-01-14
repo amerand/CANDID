@@ -19,7 +19,6 @@ There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu
 The code has *not* been deeply error proofed. If you encounter problems or bugs, do not hesitate to contact the developpers.
 
 * The code works only with a single OIFITS file. You will need an external tool to combine OIFITS files
-* the "flags" in OIFITS are not yet taken into account. Will come soon
 * The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
 * The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
 * The code is not particularly fast, but uses [multiprocessing](https://docs.python.org/2/library/multiprocessing.html): our experience on Macs is that it leads to several problems:
@@ -164,16 +163,20 @@ axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212);  plt.ylim
 ```
 ![Figure 6](https://github.com/amerand/CANDID/blob/master/doc/figure_6.png)
 
+### CONFIG parameters
+
+A global dictionnary CONFIG
+
 ## Informations
 
 ### Link
 https://github.com/amerand/CANDID
 
 ### Developpers
-[Antoine Mérand](mailto:amerand-at-eso.org) and Alexandre Gallenne
+[Antoine Mérand](mailto:amerand-at-eso.org) and [Alexandre Gallenne](mailto:agallenne-at-astro-udec.cl)
 
 ### Python dependencies
-numpy, scipy, matplotlib and pyfits (or astropy)
+python2.7, numpy, scipy, matplotlib and pyfits (or astropy)
 
 ### LICENCE
 *---TBD---*
