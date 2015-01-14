@@ -33,16 +33,20 @@ print """
 print ' | version:', __version__
 
 # -- some general parameters:
-n_smear = 3 # number of channels for bandwidth smearing
-cmap = 'cubehelix' # color map used
-longExecWarning = 180 # in seconds
+CONFIG = {'n_smear': 3, # number of channels for bandwidth smearing
+          'default cmap':'cubehelix', # color map used
+          'longExecWarning': 180, # in seconds
+          'suptitle':True, # display over head title
+          }
 
 def variables():
     print ' > global parameters (can be updated):'
-    print ' | n_smear=', n_smear, ':number of channels for bandwidth smearing '
-    print ' |           (the larger, the more accurate but the slower)'
-    print ' | cmap=', "'"+cmap+"'", ': default color map'
-    print ' | longExecWarning=', longExecWarning, ': maximum allowed computation run, in seconds'
+    for k in CONFIG.keys():
+        print "  CONFIG['%s']"%k, CONFIG[k]
+    # print ' | CONFIG['n_smear']=', CONFIG['n_smear'], ':number of channels for bandwidth smearing '
+    # print ' |           (the larger, the more accurate but the slower)'
+    # print ' | cmap=', "'"+cmap+"'", ': default color map'
+    # print ' | longExecWarning=', longExecWarning, ': maximum allowed computation run, in seconds'
     print '                            _oOo_\n'
     return
 
@@ -58,8 +62,9 @@ def Verify():
     a = Open(filename, rmin=2, rmax=20)
 
     diam = 0.9
-    print '\nreplace data with synthetic ones for UD diam=%3.2f mas, without companion'%diam
     p = {'x':12.0, 'y':12.0, 'f':0.00, 'diam*':diam, 'dwavel':a.dwavel}
+    print '\nreplace data with synthetic ones for UD diam=%3.2f mas, without companion'%p['diam']
+
     s = _modelObservables(a._rawData, p)
     n = 0
     for k in range(len(a._rawData)):
@@ -154,7 +159,7 @@ def _modelObservables(obs, param, approx=False):
 
     for CP and T3, the third u,v coordinate is computed as u1+u2, v1+v2
     """
-    global n_smear
+    global CONFIG
     c = np.pi/180/3600000.*1e6
 
     res = [0.0 for o in obs]
@@ -168,11 +173,11 @@ def _modelObservables(obs, param, approx=False):
                     res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
                 else: # -- bandwidth smearing
                     wl0 = tmp['wavel']
-                    for x in np.linspace(-0.5, 0.5, n_smear):
+                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
                         tmp['wavel'] = wl0 + x*tmp['dwavel']
                         res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
                     tmp['wavel'] = wl0
-                    res[i] /= float(n_smear)
+                    res[i] /= float(CONFIG['n_smear'])
             else:
                 # -- approximation
                 B = np.sqrt(o[1]**2+o[2]**2)
@@ -182,14 +187,19 @@ def _modelObservables(obs, param, approx=False):
                     res[i] = np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
                                       (1 + tmp['f']))**2
                 else: # -- with bandwidth smearing:
-                    for x in np.linspace(-0.5, 0.5, n_smear):
+                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
                         phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/\
                                         (tmp['wavel']+x*tmp['dwavel'])
                         Vstar = _Vud(B, tmp['diam*'],
                                     tmp['wavel']+x*tmp['dwavel'])
-                        res[i] += np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
-                                      (1 + tmp['f']))**2
-                    res[i] /= float(n_smear)
+                        # -- Antoine:
+                        # res[i] += np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
+                        #               (1 + tmp['f']))**2
+                        # -- Alex:
+                        res[i] +=  (np.abs(Vstar)**2 +
+                                    2*tmp['f']*Vstar*np.cos(phi))/\
+                                    (1 + tmp['f'])**2
+                    res[i] /= float(CONFIG['n_smear'])
 
         elif o[0]=='cp' or o[0]=='t3':
             tmp['wavel'] = o[5]
@@ -201,13 +211,13 @@ def _modelObservables(obs, param, approx=False):
                 else: # -- bandwidth smearing
                     wl0 = tmp['wavel']
                     t3 = 0.0
-                    for x in np.linspace(-0.5, 0.5, n_smear):
+                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
                         tmp['wavel'] = wl0 + x*tmp['dwavel']
                         t3 += _Vbin([o[1], o[2]], tmp)*\
                               _Vbin([o[3], o[4]], tmp)*\
                               np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
                     tmp['wavel'] = wl0
-                    t3 /= float(n_smear)
+                    t3 /= float(CONFIG['n_smear'])
                 if o[0]=='cp':
                     res[i] = -np.angle(t3)
                 elif o[0]=='t3':
@@ -220,7 +230,7 @@ def _modelObservables(obs, param, approx=False):
                                    tmp['y']*(o[2]+o[4]))/tmp['wavel']
                 B12 = np.sqrt(o[1]**2+o[2]**2)
                 B23 = np.sqrt(o[3]**2+o[4]**2)
-                B31 = np.sqrt((o[1]+o[3])**2+(o[2]+o[4])**2)
+                B31 = np.sqrt((o[1]+o[3])**2 + (o[2]+o[4])**2)
                 Vstar12 = np.abs(_Vud(B12, tmp['diam*'], tmp['wavel']))
                 Vstar23 = np.abs(_Vud(B23, tmp['diam*'], tmp['wavel']))
                 Vstar31 = np.abs(_Vud(B31, tmp['diam*'], tmp['wavel']))
@@ -254,7 +264,7 @@ def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
     returns the nSigma detection
     """
     p = scipy.stats.chi2.cdf(NDOF, NDOF*chi2r_TEST/chi2r_TRUE)
-    log10p = np.log10(np.maximum(p, 1e-50))
+    log10p = np.log10(np.maximum(p, 1e-161)) ### Alex: 50 sigmas max
     #p = np.maximum(p, -100)
     res = np.sqrt(scipy.stats.chi2.ppf(1-p,1))
     # x = np.logspace(-15,-12,100)
@@ -277,7 +287,7 @@ def _injectCompanionData(data, delta, param):
 
     data and delta have same length
     """
-    global n_smear
+    global CONFIG
     res = [[x if isinstance(x, str) else x.copy() for x in d] for d in data] # copy the data
     c = np.pi/180/3600000.*1e6
     for i,d in enumerate(res):
@@ -288,10 +298,10 @@ def _injectCompanionData(data, delta, param):
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
                 tmp = 0.0
-                for x in np.linspace(-0.5, 0.5, n_smear)*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
                     phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[3]+x)
                     tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi))/(1+param['f'])**2
-                d[-2] = tmp/float(n_smear)
+                d[-2] = tmp/float(CONFIG['n_smear'])
 
         if d[0]=='cp':
             if not 'dwavel' in param.keys():
@@ -308,21 +318,21 @@ def _injectCompanionData(data, delta, param):
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
                 tmp = 0.0 + 0.0j
-                for x in np.linspace(-0.5, 0.5, n_smear)*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
                     phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[5]+x)
                     phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/(d[5]+x)
                     phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/(d[5]+x)
                     # -- Antoine's:
-                    tmp += param['f']*(np.sin(phi0)/delta[i][0]+
-                                       np.sin(phi1)/delta[i][1]-
-                                       np.sin(phi2)/delta[i][2])
+                    # tmp += param['f']*(np.sin(phi0)/delta[i][0]+
+                    #                    np.sin(phi1)/delta[i][1]-
+                    #                    np.sin(phi2)/delta[i][2])
                     # -- Alex:
-                    tmp += 1+ param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
+                    tmp += 1 + param['f']*(np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0])
 
                 # -- Antoine's:
-                #d[-2] -= tmp/float(n_smear)
+                #d[-2] -= tmp/float(CONFIG['n_smear'])
                 # -- Alex's:
-                d[-2] -= np.angle(tmp/float(n_smear))
+                d[-2] -= np.angle(tmp/float(CONFIG['n_smear']))
 
         if d[0]=='t3':
             if not 'dwavel' in param.keys():
@@ -334,12 +344,12 @@ def _injectCompanionData(data, delta, param):
                 #                        np.cos(phi1)/delta[i][1]-
                 #                        np.cos(phi2)/delta[i][2])/(1+param['f'])**3
                 # -- Alex's:
-                tmp = 1+ param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
+                tmp = 1 + param['f']*(np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0])
                 d[-2] *= np.abs(tmp) /(1+param['f'])**3
             else:
                 # -- assumes bandwidthSmearing is a sepctral Resolution:
                 tmp = 0.0 + 0.0j
-                for x in np.linspace(-0.5, 0.5, n_smear)*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
                     phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[5]+x)
                     phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/(d[5]+x)
                     phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/(d[5]+x)
@@ -350,9 +360,9 @@ def _injectCompanionData(data, delta, param):
                     # -- Alex's:
                     tmp += 1+ param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
                 # -- Antoine's
-                #d[-2] += tmp/float(n_smear)
+                #d[-2] += tmp/float(CONFIG['n_smear'])
                 # -- Alex's:
-                d[-2] *= np.abs(tmp/float(n_smear)) /(1+param['f'])**3
+                d[-2] *= np.abs(tmp/float(CONFIG['n_smear'])) /(1+param['f'])**3
     return res
 
 def _fitFunc(param, chi2Data, observables):
@@ -365,7 +375,7 @@ def _fitFunc(param, chi2Data, observables):
     fitOnly=[]
     if param['f']!=0:
         fitOnly.extend(['x', 'y', 'f'])
-    if 'v2' in [c[0] for c in chi2Data] or 't3' in [c[0] for c in chi2Data]:
+    if 'v2' in observables or 't3' in observables:
        fitOnly.append('diam*')
     res = _dpfit_leastsqFit(_modelObservables,
                             filter(lambda c: c[0] in observables, chi2Data),
@@ -464,10 +474,13 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
 
 # == The main class
 class Open:
-    global cmap, _ff2_data
-    def __init__(self, filename, rmax=None, rmin=0.0):
+    global CONFIG, _ff2_data
+    def __init__(self, filename, rmin=0.0, rmax=None, Ncores=None):
         """
-        obs can contain "cp", "v2" and/or "t3"
+        - filename: an OIFITS file
+        - rmin, rmax: minimum and maximum radius (in mas) for plots and search
+        - Ncores: max number of core used, if None (default) will use all
+          available cores but one.
 
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
@@ -485,6 +498,7 @@ class Open:
         self.diam=None
         self.compParam = None
         self.compUncer = None
+        self.Ncores = Ncores
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
         #     print ' | no diameter given, trying to estimate it...'
@@ -622,9 +636,13 @@ class Open:
     def close(self):
         self._fitsHandler.close()
         return
+    def _pool(self):
+        if self.Ncores is None:
+            self.Ncores = max(multiprocessing.cpu_count()-1,1)
+        return multiprocessing.Pool(self.Ncores)
     def estimateRunTime(self, function, params):
         # -- estimate how long it will take, in two passes
-        p = multiprocessing.Pool(max(multiprocessing.cpu_count()-1,1))
+        p = self._pool()
         t = time.time()
         for m in params:
             p.apply_async(function, m)
@@ -708,10 +726,10 @@ class Open:
         est = self.estimateRunTime(_chi2Func, params)
         est *= np.sum(self.mapChi2>=0)
         print '... it should take about %d seconds'%(int(est))
-        if not longExecWarning is None and\
-             est>longExecWarning:
+        if not CONFIG['longExecWarning'] is None and\
+             est>CONFIG['longExecWarning']:
             print " > WARNING: this will take too long. "
-            print " | Increase the global 'longExecWarning' if you want to run longer computations."
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
             print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
         print ''
@@ -719,7 +737,7 @@ class Open:
 
         # -- compute actual grid:
         t = time.time()
-        p = multiprocessing.Pool(max(multiprocessing.cpu_count()-1,1))
+        p = self._pool()
         for i,x in enumerate(allX):
             for j,y in enumerate(allY):
                 if self.mapChi2[j,i]==0:
@@ -743,29 +761,34 @@ class Open:
                        np.minimum(np.min(self.mapChi2), self.chi2_UD),
                        self.ndata())
         print ' | chi2 Min: %5.2f'%(np.min(self.mapChi2))
-        print ' | at X,Y = %6.2f, %6.2f mas'%(x0, y0)
-        print ' | Nsigma:   %5.2f'%s0
+        print ' | at X,Y  : %6.2f, %6.2f mas'%(x0, y0)
+        print ' | Nsigma  : %5.2f'%s0
 
         plt.close(fig)
-        plt.figure(fig, figsize=(12,5.8))
-        plt.subplots_adjust(top=0.78, bottom=0.08,
-                            left=0.08, right=0.99, wspace=0.10)
-        title = "CANDID: $\chi^2$ Map for f$_\mathrm{ratio}$=%3.1f%% and "%(100*fratio)
-        if self.ediam>0:
-            title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+        if CONFIG['suptitle']:
+            plt.figure(fig, figsize=(12,5.8))
+            plt.subplots_adjust(top=0.78, bottom=0.08,
+                                left=0.08, right=0.99, wspace=0.10)
+            title = "CANDID: $\chi^2$ Map for f$_\mathrm{ratio}$=%3.1f%% and "%(100*fratio)
+            if self.ediam>0:
+                title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+            else:
+                title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+            title += ' Using '+', '.join(self.observables)
+            title += '\n'+os.path.basename(self.filename)
+            plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
-            title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
-        title += ' Using '+', '.join(self.observables)
-        title += '\n'+os.path.basename(self.filename)
-        plt.suptitle(title, fontsize=14, fontweight='bold')
+            plt.figure(fig, figsize=(12,5.4))
+            plt.subplots_adjust(top=0.88, bottom=0.10,
+                                left=0.08, right=0.99, wspace=0.10)
 
         ax1 = plt.subplot(121)
         tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$=%4.2f'%(self.chi2_UD)
         plt.title(tit)
-        plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=cmap)
-        plt.colorbar()
-        plt.xlabel(r'$\rightarrow$ E (mas)')
-        plt.ylabel(r'$\rightarrow$ N (mas)')
+        plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=CONFIG['default cmap'])
+        plt.colorbar(format='%0.2f')
+        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
 
@@ -775,12 +798,13 @@ class Open:
                        _nSigmas(self.chi2_UD,
                                 np.minimum(self.mapChi2, self.chi2_UD),
                                 self.ndata()),
-                       cmap=cmap)
-        plt.colorbar()
-        plt.xlabel(r'$\rightarrow$ E (mas)')
+                       cmap=CONFIG['default cmap'])
+        plt.colorbar(format='%0.2f')
+        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
         ax1.set_aspect('equal', 'datalim')
+        # -- make a crosshair around the minimum:
         plt.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
         plt.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
         plt.plot([x0-0.05*self.rmax, x0-0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
@@ -808,7 +832,7 @@ class Open:
         except:
             print '!!! I expect a dict!'
         return
-    def fitMap(self, step,  fig=0, addfits=False, addCompanion=None, removeCompanion=None):
+    def fitMap(self, step,  fig=1, addfits=False, addCompanion=None, removeCompanion=None):
         """
         - filename: a standard OIFITS data file
         - observables = ['cp', 'v2', 't3'] list of observables to take into account in the file. Default is all
@@ -867,15 +891,15 @@ class Open:
         est = self.estimateRunTime(_fitFunc, params)
         est *= self.Nfits
         print '... it should take about %d seconds'%(int(est))
-        if not longExecWarning is None and\
-             est>longExecWarning:
+        if not CONFIG['longExecWarning'] is None and\
+             est>CONFIG['longExecWarning']:
             print " > WARNING: this will take too long. "
-            print " | Increase the global 'longExecWarning' if you want to run longer computations."
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
             print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
         print ''
         # -- parallel on N-1 cores
-        p = multiprocessing.Pool(max(multiprocessing.cpu_count()-1,1))
+        p = self._pool()
         k = 0
         t0 = time.time()
         params = []
@@ -979,22 +1003,29 @@ class Open:
         _Z[_X**2+_Y**2>self.rmax**2] = self.chi2_UD
 
         plt.close(fig)
-        plt.figure(fig, figsize=(12,5.5))
-        plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.78,
-                            wspace=0.2, hspace=0.2)
+        if CONFIG['suptitle']:
+            plt.figure(fig, figsize=(12,5.5))
+
+            plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.78,
+                                wspace=0.2, hspace=0.2)
+        else:
+            plt.figure(fig, figsize=(12,5.))
+            plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.9,
+                                wspace=0.2, hspace=0.2)
+
         title = "CANDID: companion search"
         title += ' using '+', '.join(self.observables)
         title += '\n'+os.path.basename(self.filename)
         if not removeCompanion is None:
             title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
                     removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
-
-        plt.suptitle(title, fontsize=14, fontweight='bold')
+        if CONFIG['suptitle']:
+            plt.suptitle(title, fontsize=14, fontweight='bold')
 
         ax1 = plt.subplot(1,2,1)
         plt.title('$\chi^2$ best fit / $\chi^2_{UD}$')
-        plt.pcolormesh(_X-0.5*self.rmax/float(N), _Y-0.5*self.rmax/float(N), _Z/self.chi2_UD, cmap=cmap+'_r')
-        plt.colorbar()
+        plt.pcolormesh(_X-0.5*self.rmax/float(N), _Y-0.5*self.rmax/float(N), _Z/self.chi2_UD, cmap=CONFIG['default cmap']+'_r')
+        plt.colorbar(format='%0.2f')
         if reliability=='unreliable':
             plt.text(0,0,'!! UNRELIABLE !!', color='r', size=30, alpha=0.5,
                      ha='center', va='center', rotation=45)
@@ -1006,8 +1037,8 @@ class Open:
             plt.plot([f['best']['x'], params[i]['x']],
                      [f['best']['y'], params[i]['y']], '-y',
                      alpha=0.3, linewidth=2)
-        plt.xlabel(r'$\rightarrow$ E (mas)')
-        plt.ylabel(r'$\rightarrow$ N (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-0.5*self.rmax/float(N), -self.rmax+0.5*self.rmax/float(N))
         plt.ylim(-self.rmax+0.5*self.rmax/float(N), self.rmax-0.5*self.rmax/float(N))
         ax1.set_aspect('equal', 'datalim')
@@ -1017,8 +1048,8 @@ class Open:
 
         ax2 = plt.subplot(1,2,2, sharex=ax1, sharey=ax1)
         plt.title('n$\sigma$ of detection')
-        plt.pcolormesh(_X-0.5*self.rmax/float(N), _Y-0.5*self.rmax/float(N), n_sigma, cmap=cmap, vmin=0)
-        plt.colorbar()
+        plt.pcolormesh(_X-0.5*self.rmax/float(N), _Y-0.5*self.rmax/float(N), n_sigma, cmap=CONFIG['default cmap'], vmin=0)
+        plt.colorbar(format='%0.2f')
 
         # if self.rmin>0:
         #     c = plt.Circle((0,0), self.rmin, color='k', alpha=0.33, hatch='x')
@@ -1054,6 +1085,7 @@ class Open:
             x0 = allMin2[i]['best']['x']#+self.rmax/float(N)
             y0 = allMin2[i]['best']['y']#+self.rmax/float(N)
             s0 = allMin2[i]['nsigma']
+            # -- draw cross hair
             for ax in [ax1, ax2]:
                 ax.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
                 ax.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
@@ -1061,8 +1093,8 @@ class Open:
                 ax.plot([x0+0.05*self.rmax, x0+0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
             ax2.text(0.9*x0, 0.9*y0, r'%3.1f$\sigma$'%s0, color='r')
 
-        plt.xlabel(r'$\rightarrow$ E (mas)')
-        plt.ylabel(r'$\rightarrow$ N (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-self.rmax/float(N), -self.rmax+self.rmax/float(N))
         plt.ylim(-self.rmax+self.rmax/float(N), self.rmax-self.rmax/float(N))
         ax2.set_aspect('equal', 'datalim')
@@ -1165,8 +1197,10 @@ class Open:
         except:
             print 'did not work'
         return
-    def detectionLimit(self, step, diam=None, fig=1, addfit=False, addCompanion=None, removeCompanion=None, rmin=1.0):
+    def detectionLimit(self, step, diam=None, fig=2, addCompanion=None, removeCompanion=None, drawMaps=True):
         """
+        step: number of steps N in the map (map will be NxN)
+        drawMaps: display the detection maps in addition to the radial profile (default)
         """
         try:
             N = int(np.ceil(2*self.rmax/step))
@@ -1201,10 +1235,10 @@ class Open:
         est *= N**2
         print '... it should take about %d seconds'%(int(est))
 
-        if not longExecWarning is None and\
-             est>longExecWarning:
+        if not CONFIG['longExecWarning'] is None and\
+             est>CONFIG['longExecWarning']:
             print " > WARNING: this will take too long. "
-            print " | Increase the global 'longExecWarning' if you want to run longer computations."
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
             print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
 
@@ -1223,7 +1257,7 @@ class Open:
             self._prog = 0.0
             self._progTime = [time.time(), time.time()]
             # -- parallel treatment:
-            p = multiprocessing.Pool(max(multiprocessing.cpu_count()-1,1))
+            p = self._pool()
             for i,x in enumerate(allX):
                 for j,y in enumerate(allY):
                     if self.f3s[j,i]==0:
@@ -1245,46 +1279,57 @@ class Open:
                             np.min(100*self.allf3s['injection']))
         vmax=max(np.max(100*self.allf3s['Absil']),
                             np.max(100*self.allf3s['injection']))
-        vmin, vmax = None, None
-        plt.close(fig)
-        plt.figure(fig, figsize=(11,10))
-        plt.subplots_adjust(top=0.85, bottom=0.08,
-                            left=0.08, right=0.97)
-        title = "CANDID: flux ratio for 3$\sigma$ detection, "
-        if self.ediam>0:
-            title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+        if drawMaps:
+            # -- draw the detection maps
+            vmin, vmax = None, None
+            plt.close(fig)
+            if CONFIG['suptitle']:
+                plt.figure(fig, figsize=(11,10))
+                plt.subplots_adjust(top=0.85, bottom=0.08,
+                                    left=0.08, right=0.97)
+                title = "CANDID: flux ratio for 3$\sigma$ detection, "
+                if self.ediam>0:
+                    title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+                else:
+                    title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
+                title += ' Using '+', '.join(self.observables)
+                title += '\n'+os.path.basename(self.filename)
+                if not removeCompanion is None:
+                    title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
+                            removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
+
+                plt.suptitle(title, fontsize=14, fontweight='bold')
+            else:
+                plt.figure(fig, figsize=(11,9))
+                plt.subplots_adjust(top=0.95, bottom=0.08,
+                                    left=0.08, right=0.97)
+            ax1=plt.subplot(221)
+            plt.title("Absil's Method")
+            plt.pcolormesh(X, Y, 100*self.allf3s['Absil'], cmap=CONFIG['default cmap'],
+                       vmin=vmin, vmax=vmax)
+            plt.colorbar()
+            plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+            plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
+            plt.xlim(self.rmax, -self.rmax)
+            plt.ylim(-self.rmax, self.rmax)
+            ax1.set_aspect('equal', 'datalim')
+
+            ax2=plt.subplot(222)
+            plt.title('Companion Injection Method')
+            plt.pcolor(X, Y, 100*self.allf3s['injection'], cmap=CONFIG['default cmap'],
+                       vmin=vmin, vmax=vmax)
+            plt.colorbar()
+            plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+            plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
+            plt.xlim(self.rmax, -self.rmax)
+            plt.ylim(-self.rmax, self.rmax)
+            ax2.set_aspect('equal', 'datalim')
+            plt.subplot(212)
+
         else:
-            title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
-        title += ' Using '+', '.join(self.observables)
-        title += '\n'+os.path.basename(self.filename)
-        if not removeCompanion is None:
-            title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
-                    removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
+            plt.close(fig)
+            plt.figure(fig, figsize=(6,5))
 
-        plt.suptitle(title, fontsize=14, fontweight='bold')
-        ax1=plt.subplot(221)
-        plt.title("Absil's Method")
-        plt.pcolormesh(X, Y, 100*self.allf3s['Absil'], cmap=cmap,
-                   vmin=vmin, vmax=vmax)
-        plt.colorbar()
-        plt.xlabel(r'$\rightarrow$ E (mas)')
-        plt.ylabel(r'$\rightarrow$ N (mas)')
-        plt.xlim(self.rmax, -self.rmax)
-        plt.ylim(-self.rmax, self.rmax)
-        ax1.set_aspect('equal', 'datalim')
-
-        ax2=plt.subplot(222)
-        plt.title('Companion Injection Method')
-        plt.pcolor(X, Y, 100*self.allf3s['injection'], cmap=cmap,
-                   vmin=vmin, vmax=vmax)
-        plt.colorbar()
-        plt.xlabel(r'$\rightarrow$ E (mas)')
-        plt.ylabel(r'$\rightarrow$ N (mas)')
-        plt.xlim(self.rmax, -self.rmax)
-        plt.ylim(-self.rmax, self.rmax)
-        ax2.set_aspect('equal', 'datalim')
-
-        plt.subplot(212)
         # -- radial profile:
         r = np.sqrt(X**2+Y**2).flatten()
         r_f3s = {}
@@ -1294,14 +1339,16 @@ class Open:
         for k in r_f3s.keys():
             r_f3s[k] = r_f3s[k][(r<self.rmax)*(r>self.rmin)]
         r = r[(r<self.rmax)*(r>self.rmin)]
-        plt.plot(r, 100*sliding_percentile(r, r_f3s['Absil'], self.rmax/float(N), 90),
+        plt.plot(r, 100*sliding_percentile(r, r_f3s['Absil'],
+                  self.rmax/float(N), 90),
                 '-r', linewidth=3, alpha=0.5, label='Absil 90%')
-        plt.plot(r, 100*sliding_percentile(r, r_f3s['injection'], self.rmax/float(N), 90),
+        plt.plot(r, 100*sliding_percentile(r, r_f3s['injection'],
+                  self.rmax/float(N), 90),
                 '-b', linewidth=3, alpha=0.5, label='injection 90%')
         plt.legend()
         plt.xlabel('radial distance (mas)')
-        plt.ylabel('3 $\sigma$ detection limit (flux ratio, %)')
-        plt.grid()
+        plt.ylabel('f$_{3\sigma}$ (%)')
+        #plt.grid()
         return
 
 def sliding_percentile(x, y, dx, percentile=50, smooth=True):
