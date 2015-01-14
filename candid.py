@@ -23,7 +23,9 @@ import multiprocessing
 import os
 
 #__version__ = '0.1 | 2014/11/25'
-__version__ = '0.2 | 2015/01/07'
+#__version__ = '0.2 | 2015/01/07' # big clean
+__version__ = '0.3 | 2015/01/14' # add Alex contrib
+
 
 print """
 ===================== This is CANDID ===================================
@@ -397,7 +399,9 @@ def _chi2Func(param, chi2Data, observables):
             _meas = np.append(_meas, c[-2].flatten())
             _errs = np.append(_errs, c[-1].flatten())
     _errs += _errs==0. # remove bad point in a dirty way
-    res = np.mean((_meas-_modelObservables(filter(lambda c: c[0] in observables, chi2Data), param))**2/_errs**2)
+    res = (_meas-_modelObservables(filter(lambda c: c[0] in observables, chi2Data), param))**2/_errs**2
+    res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
+    res = np.mean(res)
     if '_i' in param.keys() and '_j' in param.keys():
         return param['_i'], param['_j'], res
     else:
@@ -558,6 +562,9 @@ class Open:
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_T3':
                 ins = hdu.header['INSNAME']
+                data = hdu.data['T3PHI']*np.pi/180
+                data[hdu.data['FLAG']] = np.nan
+                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 # -- load data
                 self._rawData.append(('cp',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
@@ -567,8 +574,11 @@ class Open:
                       wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
                       hdu.data['MJD'][:,None]+0*wavel[ins][None,:],
                       ins,
-                      hdu.data['T3PHI']*np.pi/180,
+                      data,
                       hdu.data['T3PHIERR']*np.pi/180))
+                data = hdu.data['T3AMP']*np.pi/180
+                data[hdu.data['FLAG']] = np.nan
+                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 self._rawData.append(('t3',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
@@ -576,16 +586,20 @@ class Open:
                       hdu.data['V2COORD'][:,None]+0*wavel[ins][None,:],
                       wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
                       hdu.data['MJD'][:,None]+0*wavel[ins][None,:], ins,
-                      hdu.data['T3AMP'],
+                      data,
                       hdu.data['T3AMPERR']))
             if hdu.header['EXTNAME']=='OI_VIS2':
                 ins = hdu.header['INSNAME']
+                data = hdu.data['VIS2DATA']
+                data[hdu.data['FLAG']] = np.nan
+                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 self._rawData.append(('v2',
                       hdu.data['UCOORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*wavel[ins][None,:],
                       wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*wavel[ins][None,:], ins,
-                      hdu.data['VIS2DATA'],
+                      hdu.data['MJD'][:,None]+0*wavel[ins][None,:],
+                      ins,
+                      data,
                       hdu.data['VIS2ERR']))
 
         # -- compute a flatten version of all V2:
@@ -1566,26 +1580,21 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
         err = np.ones(np.array(y).shape)
 
     # -- compute residuals
-
     if type(y)==np.ndarray and type(err)==np.ndarray:
-        if len(err.shape)==2:
-            # -- using correlations
-            tmp = func(x,params)
-            #res = np.dot(np.dot(tmp-y, linalg.inv(err)), tmp-y)
-            res = np.dot(np.dot(tmp-y, err), tmp-y)
-            res = np.ones(len(y))*np.sqrt(res/len(y))
-        else:
-            # -- assumes y and err are a numpy array
-            y = np.array(y)
-            res= ((func(x,params)-y)/err).flatten()
+        # -- assumes y and err are a numpy array
+        y = np.array(y)
+        res = ((func(x,params)-y)/err).flatten()
+        # -- avoid NaN! -> make them 0's
+        res = np.nan_to_num(res)
     else:
         # much slower: this time assumes y (and the result from func) is
         # a list of things, each convertible in np.array
         res = []
         tmp = func(x,params)
-
         for k in range(len(y)):
             df = (np.array(tmp[k])-np.array(y[k]))/np.array(err[k])
+            # -- avoid NaN! -> make them 0's
+            df = np.nan_to_num(df)
             try:
                 res.extend(list(df))
             except:
