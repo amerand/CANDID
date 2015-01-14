@@ -24,7 +24,7 @@ import os
 
 #__version__ = '0.1 | 2014/11/25'
 #__version__ = '0.2 | 2015/01/07' # big clean
-__version__ = '0.3 | 2015/01/14' # add Alex contrib
+__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
 
 
 print """
@@ -564,7 +564,6 @@ class Open:
                 ins = hdu.header['INSNAME']
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan
-                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 # -- load data
                 self._rawData.append(('cp',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
@@ -578,7 +577,6 @@ class Open:
                       hdu.data['T3PHIERR']*np.pi/180))
                 data = hdu.data['T3AMP']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan
-                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 self._rawData.append(('t3',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
@@ -592,7 +590,6 @@ class Open:
                 ins = hdu.header['INSNAME']
                 data = hdu.data['VIS2DATA']
                 data[hdu.data['FLAG']] = np.nan
-                data[1,1] = np.nan; print '--- !!! TEST !!! ---'
                 self._rawData.append(('v2',
                       hdu.data['UCOORD'][:,None]+0*wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*wavel[ins][None,:],
