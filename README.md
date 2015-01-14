@@ -148,7 +148,7 @@ axcir.detectionLimit(1.0, fig=5); plt.subplot(212);  plt.ylim(0.2, 1.0)
 ### FIG6 - DETECTION LIMIT, 1mas step, after removing companion
 ```python
 p = {'x':6.23, 'y':-28.5, 'f':0.0089}
-axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212);  plt.ylim(0.2, 1.0)
+axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212); plt.ylim(0.2, 1.0)
 ```
 ```
  > observables: ['v2', 'cp']
@@ -165,7 +165,11 @@ axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212);  plt.ylim
 
 ### CONFIG parameters
 
-A global dictionnary CONFIG
+A global dictionnary CONFIG to set parameters. The list of default parameters is shown each time the library is loaded. To modidy the parameters, you should do it as such:
+```python
+candid.CONFIG['longExecWarning'] = 300
+```
+This will, for example, set the maximum computing time to 300s (instead of the default 180s). Note that this will have to be done every time you import or reload the library.
 
 ## Informations
 
