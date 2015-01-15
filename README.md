@@ -128,6 +128,8 @@ axcir.fitMap(3.5, fig=4, removeCompanion=p)
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
 
 ### FIG5 - DETECTION LIMIT, 1mas step
+This leads to a result which is not relevant: we already know there is a companion in the data, which means the assumptions of the statistical tests are not met. Interestingly, the 2 methods diveregs, which means there are not sensitive in the same way to the correlated noise introduced by the companion.
+
 ```python
 axcir.detectionLimit(1.0, fig=5); plt.subplot(212);  plt.ylim(0.2, 1.0)
 ```
@@ -146,6 +148,7 @@ axcir.detectionLimit(1.0, fig=5); plt.subplot(212);  plt.ylim(0.2, 1.0)
 ![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
 
 ### FIG6 - DETECTION LIMIT, 1mas step, after removing companion
+We here remove the companion analyticaly (using a high contrast hypothesis). In that case, the two methods (Absil and companion injection) should give similar result, assuming the remaining noise is uncorrelated (which we know is not true). Comparing this to the previous result, we can see that the injection method is more robust.
 ```python
 p = {'x':6.23, 'y':-28.5, 'f':0.0089}
 axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212); plt.ylim(0.2, 1.0)
@@ -162,6 +165,8 @@ axcir.detectionLimit(1.0, fig=6, removeCompanion=p); plt.subplot(212); plt.ylim(
  |================================================== | 99%   0 s remaining
 ```
 ![Figure 6](https://github.com/amerand/CANDID/blob/master/doc/figure_6.png)
+
+
 
 ### CONFIG parameters
 
