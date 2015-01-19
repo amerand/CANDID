@@ -142,8 +142,8 @@ def _Vbin(uv, param):
     B = np.sqrt(uv[0]**2+uv[1]**2)
     Vstar = _Vud(B, param['diam*'], param['wavel'])
     phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
-    Vcomp = np.exp(1j*phi)
-    res = (Vstar + np.abs(f)*Vcomp)/(1.0+f)
+    Vcomp = np.exp(-1j*phi) # assumes it is unresolved.
+    res = (Vstar + f*Vcomp)/(1.0+f)
     return res
 
 def _modelObservables(obs, param, approx=False):
@@ -163,7 +163,6 @@ def _modelObservables(obs, param, approx=False):
     """
     global CONFIG
     c = np.pi/180/3600000.*1e6
-
     res = [0.0 for o in obs]
     # -- copy parameters:
     tmp = {k:param[k] for k in param.keys()}
@@ -215,15 +214,16 @@ def _modelObservables(obs, param, approx=False):
                     t3 = 0.0
                     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
                         tmp['wavel'] = wl0 + x*tmp['dwavel']
-                        t3 += _Vbin([o[1], o[2]], tmp)*\
+                        _t3 = _Vbin([o[1], o[2]], tmp)*\
                               _Vbin([o[3], o[4]], tmp)*\
                               np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
+                        t3 += _t3/float(CONFIG['n_smear'])
                     tmp['wavel'] = wl0
-                    t3 /= float(CONFIG['n_smear'])
                 if o[0]=='cp':
-                    res[i] = -np.angle(t3)
+                    res[i] = np.angle(t3)
                 elif o[0]=='t3':
-                    res[i] = np.abs(t3)
+                    res[i] = np.absolute(t3)
+
             else:
                 # -- assumes star is not resolved (first lobe)
                 phi12 = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
@@ -315,7 +315,7 @@ def _injectCompanionData(data, delta, param):
                 #                      np.sin(phi1)/delta[i][1]-
                 #                      np.sin(phi2)/delta[i][2])
                 # -- from Alex:
-                tmp = 1+ param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
+                tmp = 1 + param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
                 d[-2] -= np.angle(tmp)
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
@@ -517,10 +517,11 @@ class Open:
         if not forcedDiam is None:
             self.diam = forcedDiam
 
-        if forcedDiam is None and ('v2' in self.observables or 't3' in self.observables) and\
+        if forcedDiam is None and \
+            ('v2' in self.observables or 't3' in self.observables) and\
             ('v2' in [c[0] for c in self._chi2Data] or
              't3' in [c[0] for c in self._chi2Data]):
-            fit_0 = _fitFunc({'x':0, 'y':0, 'f':0, 'diam*':0.5},
+            fit_0 = _fitFunc({'x':0, 'y':0, 'f':0, 'diam*':0.1,'dwavel':self.dwavel},
                              self._chi2Data, self.observables)
             print ' > UD Fit'
             self.chi2_UD = fit_0['chi2']
@@ -532,16 +533,21 @@ class Open:
         elif not self.diam is None:
             print ' > UD CHI2 (no fit!)'
             print ' | Chi2 UD for diam=%4.3fmas'%self.diam
-            self.chi2_UD = _chi2Func({'x':0, 'y':0, 'f':0, 'diam*':self.diam, 'dwavel':self.dwavel},
+            self.chi2_UD = _chi2Func({'x':0, 'y':0, 'f':0, 'diam*':self.diam,
+                                     'dwavel':self.dwavel},
                                self._chi2Data, self.observables)
             self.ediam = np.nan
             print ' |  chi2 UD = %4.3f'%self.chi2_UD
         else:
-            print " | WARNING: a UD cannot be determined, and a valid 'diam' is not defined for Chi2 computation"
+            print " | WARNING: a UD cannot be determined, and a valid 'diam' is not defined for Chi2 computation. ASSUMING CHI2UD=1.0"
             self.diam = None
             self.ediam = np.nan
+            self.chi2_UD = 1.0
         return
     def _loadOifitsData(self):
+        """
+        Note that CP are stored in radians, not degrees like in the OIFITS!
+        """
         self._fitsHandler = fits.open(self.filename)
         self._dataheader={}
         for k in ['X','Y','F']:
@@ -556,12 +562,12 @@ class Open:
                 wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
                 #print 'dwavel=', np.abs(np.diff(hdu.data['EFF_WAVE']*1e6).mean())
                 self.dwavel=np.abs(np.diff(hdu.data['EFF_WAVE']*1e6).mean())
-
         # -- load all data:
         self._rawData, self._delta = [], []
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_T3':
                 ins = hdu.header['INSNAME']
+                # -- CP
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 self._rawData.append(('cp',
@@ -574,7 +580,8 @@ class Open:
                       ins,
                       data,
                       hdu.data['T3PHIERR']*np.pi/180))
-                data = hdu.data['T3AMP']*np.pi/180
+                # -- T3
+                data = hdu.data['T3AMP']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 self._rawData.append(('t3',
                       hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
@@ -795,7 +802,12 @@ class Open:
                                 left=0.08, right=0.99, wspace=0.10)
 
         ax1 = plt.subplot(121)
-        tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$=%4.2f'%(self.chi2_UD)
+        tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$='
+        if self.chi2_UD>0.05:
+            tit += '%4.2f'%(self.chi2_UD)
+        else:
+            tit += '%4.2e'%(self.chi2_UD)
+
         plt.title(tit)
         plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=CONFIG['default cmap'])
         plt.colorbar(format='%0.2f')
@@ -988,14 +1000,14 @@ class Open:
              2*self.rmax/float(N)*np.sqrt(2)/2>np.median([f['dist'] for f in self.allFits]):
             print ' | \033[41mWARNING, grid is too wide!!!',
             #print '--> try N=%d\033[0m'%(np.ceil(self.Nopt))
-            print '--> try step=%3.2fmas\033[0m'%(2*self.rmax/self.Nopt)
+            print '--> try step=%4.2fmas\033[0m'%(2.*self.rmax/float(self.Nopt))
             reliability = 'unreliable'
         elif N>1.2*self.Nopt:
-            print ' | \033[43mWARNING, current grid step (%3.2fmas) may be to fine!!!'%(2*self.rmax/N),
-            print '--> try step=%3.2fmas\033[0m'%(2*self.rmax/self.Nopt)
+            print ' | \033[43mcurrent grid step (%4.2fmas) is too fine!!!'%(2*self.rmax/N),
+            print '--> %4.2fmas should be enough\033[0m'%(2.*self.rmax/float(self.Nopt))
             reliability = 'overkill'
         else:
-            print ' | \033[42mGrid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas\033[0m'%(step, 2*self.rmax/self.Nopt)
+            print ' | \033[42mGrid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas\033[0m'%(step, 2.*self.rmax/float(self.Nopt))
             reliability = 'reliable'
 
         # == plot chi2 min map:
