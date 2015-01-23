@@ -296,13 +296,13 @@ def _injectCompanionData(data, delta, param):
         if d[0]=='v2':
             if not 'dwavel' in param.keys():
                 phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[3]
-                d[-2] = (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi))/(1+param['f'])**2
+                d[-2] = (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
                 tmp = 0.0
                 for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
                     phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[3]+x)
-                    tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi))/(1+param['f'])**2
+                    tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
                 d[-2] = tmp/float(CONFIG['n_smear'])
 
         if d[0]=='cp':
