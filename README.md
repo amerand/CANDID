@@ -138,7 +138,7 @@ axcir.detectionLimit(1.0, fig=4); plt.subplot(212);  plt.ylim(0.2, 1.0)
 
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
 
-### FIG6 - DETECTION LIMIT, 1mas step, after removing companion
+### FIG5 - DETECTION LIMIT, 1mas step, after removing companion
 We here remove the companion analyticaly (using a high contrast hypothesis) from the V2 and CP data. In that case, the two methods (Absil and companion injection) should give more similar results, assuming the remaining noise is uncorrelated (which we know is probably not true). Comparing this to the previous result, we can see that the injection method is more robust (less change compared to data with companion). The two methods still diverge, but less.
 ```python
 p = {'x':6.24, 'y':-28.5, 'f':0.0094}
