@@ -6,12 +6,12 @@ try:
     from astropy.io import fits
     _fitsLoaded=True
 except:
-    pass
-try:
-    import pyfits as fits
-    _fitsLoaded=True
-except:
-    pass
+    try:
+        import pyfits as fits
+        _fitsLoaded=True
+    except:
+        pass
+
 if not _fitsLoaded:
     print 'ERROR: astropy.io.fits or pyfits required!'
 
@@ -24,8 +24,8 @@ import os
 
 #__version__ = '0.1 | 2014/11/25'
 #__version__ = '0.2 | 2015/01/07' # big clean
-__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
-
+#__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
+__version__ = '0.4 | 2015/01/30' # modified bandwidth semaring handling
 
 print """
 ===================== This is CANDID ===================================
@@ -35,7 +35,7 @@ print """
 print ' | version:', __version__
 
 # -- some general parameters:
-CONFIG = {'n_smear': 3, # number of channels for bandwidth smearing
+CONFIG = {#'n_smear': 3, # number of channels for bandwidth smearing -> OBSOLETE!
           'default cmap':'cubehelix', # color map used
           'longExecWarning': 180, # in seconds
           'suptitle':True, # display over head title
@@ -143,10 +143,16 @@ def _Vbin(uv, param):
     Vstar = _Vud(B, param['diam*'], param['wavel'])
     phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
     Vcomp = np.exp(-1j*phi) # assumes it is unresolved.
+    # -- Alex's formula to take into account the bandwith smearing
+    # -- >>> Only works for V and V2, not for CP?
+    if 'dwavel' in param.keys():
+        x = phi*param['dwavel']/param['wavel']/2.
+        x += 1e-6*(x==0)
+        f *= np.abs(np.sin(x)/x)
     res = (Vstar + f*Vcomp)/(1.0+f)
     return res
 
-def _modelObservables(obs, param, approx=False):
+def _modelObservables(obs, param):
     """
     model observables contained in "obs".
     param -> see _Vbin
@@ -166,99 +172,60 @@ def _modelObservables(obs, param, approx=False):
     for CP and T3, the third u,v coordinate is computed as u1+u2, v1+v2
     """
     global CONFIG
-    c = np.pi/180/3600000.*1e6
+    #c = np.pi/180/3600000.*1e6
     res = [0.0 for o in obs]
     # -- copy parameters:
     tmp = {k:param[k] for k in param.keys()}
     tmp['f'] = np.abs(tmp['f'])
     for i, o in enumerate(obs):
-        if 'dwavel' in tmp:
-            dwavel = tmp['dwavel']
-        elif 'dwavel;'+o[0].split(';')[1] in tmp:
-            dwavel = tmp['dwavel;'+o[0].split(';')[1]]
+        if 'dwavel' in param.keys():
+            dwavel = param['dwavel']
+        elif 'dwavel;'+o[0].split(';')[1] in param.keys():
+            dwavel = param['dwavel;'+o[0].split(';')[1]]
         else:
             dwavel = None
+
+        tmp = {k:tmp[k] for k in param.keys() if not k.startswith('dwavel')}
+        if not dwavel is None:
+            tmp['dwavel'] = dwavel
+
+        # -- force using the monochromatic, since smearing is in _VBin
+        dwavel=None;
+
         if o[0].split(';')[0]=='v2':
             tmp['wavel'] = o[3]
-            if not approx:
-                if dwavel is None: # -- monochromatic
-                    res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
-                else: # -- bandwidth smearing
-                    wl0 = tmp['wavel']
-                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                        tmp['wavel'] = wl0 + x*dwavel
-                        res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
-                    tmp['wavel'] = wl0
-                    res[i] /= float(CONFIG['n_smear'])
-            else:
-                # -- approximation
-                B = np.sqrt(o[1]**2+o[2]**2)
-                if dwavel is None: # -- monochromatic
-                    phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
-                    Vstar = _Vud(B, tmp['diam*'], tmp['wavel'])
-                    res[i] = np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
-                                      (1 + tmp['f']))**2
-                else: # -- with bandwidth smearing:
-                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                        phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/\
-                                        (tmp['wavel']+x*dwavel)
-                        Vstar = _Vud(B, tmp['diam*'],
-                                    tmp['wavel']+x*dwavel)
-                        # -- Antoine:
-                        # res[i] += np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
-                        #               (1 + tmp['f']))**2
-                        # -- Alex:
-                        res[i] +=  (np.abs(Vstar)**2 +
-                                    2*tmp['f']*Vstar*np.cos(phi))/\
-                                    (1 + tmp['f'])**2
-                    res[i] /= float(CONFIG['n_smear'])
+            if dwavel is None: # -- monochromatic
+                res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
+            else: # -- bandwidth smearing manually
+                wl0 = tmp['wavel']
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
+                    tmp['wavel'] = wl0 + x*dwavel
+                    res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
+                tmp['wavel'] = wl0
+                res[i] /= float(CONFIG['n_smear'])
 
         elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3':
             tmp['wavel'] = o[5]
-            if not approx: # -- approximation
-                if dwavel is None: # -- monochromatic
-                    t3 = _Vbin([o[1], o[2]], tmp)*\
-                         _Vbin([o[3], o[4]], tmp)*\
-                         np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
-                else: # -- bandwidth smearing
-                    wl0 = tmp['wavel']
-                    t3 = 0.0
-                    for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                        tmp['wavel'] = wl0 + x*dwavel
-                        _t3 = _Vbin([o[1], o[2]], tmp)*\
-                              _Vbin([o[3], o[4]], tmp)*\
-                              np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
-                        t3 += _t3/float(CONFIG['n_smear'])
-                    tmp['wavel'] = wl0
-                if o[0].split(';')[0]=='cp':
-                    res[i] = np.angle(t3)
-                elif o[0].split(';')[0]=='t3':
-                    res[i] = np.absolute(t3)
+            if dwavel is None: # -- monochromatic
+                t3 = _Vbin([o[1], o[2]], tmp)*\
+                     _Vbin([o[3], o[4]], tmp)*\
+                     np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
+            else: # -- bandwidth smearing manually
+                wl0 = tmp['wavel']
+                t3 = 0.0
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
+                    tmp['wavel'] = wl0 + x*dwavel
+                    _t3 = _Vbin([o[1], o[2]], tmp)*\
+                          _Vbin([o[3], o[4]], tmp)*\
+                          np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
+                    t3 += _t3/float(CONFIG['n_smear'])
+                tmp['wavel'] = wl0
 
-            else:
-                # -- assumes star is not resolved (first lobe)
-                phi12 = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
-                phi23 = 2*np.pi*c*(tmp['x']*o[3]+tmp['y']*o[4])/tmp['wavel']
-                phi31 = 2*np.pi*c*(tmp['x']*(o[1]+o[3])+
-                                   tmp['y']*(o[2]+o[4]))/tmp['wavel']
-                B12 = np.sqrt(o[1]**2+o[2]**2)
-                B23 = np.sqrt(o[3]**2+o[4]**2)
-                B31 = np.sqrt((o[1]+o[3])**2 + (o[2]+o[4])**2)
-                Vstar12 = np.abs(_Vud(B12, tmp['diam*'], tmp['wavel']))
-                Vstar23 = np.abs(_Vud(B23, tmp['diam*'], tmp['wavel']))
-                Vstar31 = np.abs(_Vud(B31, tmp['diam*'], tmp['wavel']))
-                if o[0].split(';')[0]=='cp':
-                    cp = tmp['f']*(np.sin(phi12)/Vstar12 +
-                                     np.sin(phi23)/Vstar23 -
-                                     np.sin(phi31)/Vstar31)
-                    res[i] = -cp
-                elif o[0].split(';')[0]=='t3':
-                    # --
-                    res[i] = (Vstar12*Vstar23*Vstar31 + tmp['f']*(
-                              Vstar12*np.cos(phi12) +
-                              Vstar23*np.cos(phi23) -
-                              Vstar31*np.cos(phi31))
-                              )/(1+tmp['f'])**3
+            if o[0].split(';')[0]=='cp':
+                res[i] = np.angle(t3)
+            elif o[0].split(';')[0]=='t3':
+                res[i] = np.absolute(t3)
+
         else:
             print 'ERROR: unreckognized observable:', o[0]
     res2 = np.array([])
@@ -304,20 +271,26 @@ def _injectCompanionData(data, delta, param):
     res = [[x if isinstance(x, str) else x.copy() for x in d] for d in data] # copy the data
     c = np.pi/180/3600000.*1e6
     for i,d in enumerate(res):
+        if 'dwavel' in param:
+            dwavel = param['dwavel']
+        elif 'dwavel;'+d[0].split(';')[1] in param:
+            dwavel = param['dwavel;'+d[0].split(';')[1]]
+        else:
+            dwavel = None
         if d[0].split(';')[0]=='v2':
-            if not 'dwavel' in param.keys():
+            if dwavel is None:
                 phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[3]
                 d[-2] = (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
                 tmp = 0.0
-                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*dwavel:
                     phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[3]+x)
                     tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
                 d[-2] = tmp/float(CONFIG['n_smear'])
 
         if d[0].split(';')[0]=='cp':
-            if not 'dwavel' in param.keys():
+            if dwavel is None:
                 phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
                 phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
                 phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/d[5]
@@ -331,7 +304,7 @@ def _injectCompanionData(data, delta, param):
             else:
                 # -- assumes bandwidthSmearing is a spectral Resolution:
                 tmp = 0.0 + 0.0j
-                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*dwavel:
                     phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[5]+x)
                     phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/(d[5]+x)
                     phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/(d[5]+x)
@@ -348,7 +321,7 @@ def _injectCompanionData(data, delta, param):
                 d[-2] -= np.angle(tmp/float(CONFIG['n_smear']))
 
         if d[0].split(';')[0]=='t3':
-            if not 'dwavel' in param.keys():
+            if dwavel is None:
                 phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
                 phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
                 phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/d[5]
@@ -357,12 +330,14 @@ def _injectCompanionData(data, delta, param):
                 #                        np.cos(phi1)/delta[i][1]-
                 #                        np.cos(phi2)/delta[i][2])/(1+param['f'])**3
                 # -- Alex's:
-                tmp = 1 + param['f']*(np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0])
+                tmp = 1 + param['f']*(np.exp(-1j*phi2)/delta[i][2] +
+                                      np.exp(1j*phi1)/delta[i][1] +
+                                      np.exp(1j*phi0)/delta[i][0])
                 d[-2] *= np.abs(tmp) /(1+param['f'])**3
             else:
                 # -- assumes bandwidthSmearing is a sepctral Resolution:
                 tmp = 0.0 + 0.0j
-                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*param['dwavel']:
+                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*dwavel:
                     phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[5]+x)
                     phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/(d[5]+x)
                     phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/(d[5]+x)
@@ -538,7 +513,7 @@ class Open:
              't3' in [c[0].split(';')[0] for c in self._chi2Data]):
             tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
             for _k in self.dwavel.keys():
-                tmp['dwavel'+_k] = self.dwavel[_k]
+                tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
 
             print ' > UD Fit'
@@ -553,7 +528,7 @@ class Open:
             print ' | Chi2 UD for diam=%4.3fmas'%self.diam
             tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
             for _k in self.dwavel.keys():
-                tmp['dwavel'+_k] = self.dwavel[_k]
+                tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
             self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables)
             self.ediam = np.nan
@@ -943,7 +918,6 @@ class Open:
                       'f':0.02, 'diam*':self.diam}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
-
             params.append((tmp, self._chi2Data, self.observables))
         est = self.estimateRunTime(_fitFunc, params)
         est *= self.Nfits
