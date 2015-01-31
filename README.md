@@ -62,6 +62,7 @@ axcir.chi2Map(0.5, fig=1, fratio=0.01)
 
 
 ### FIG2 - FITMAP with 3.5 mas step:
+Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like for ([FIG1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png))). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size. In our example below, 3.5 mas is a little sub-optimum. The companion is detected at the same position as for the previous example, with a much better dynamic range.
 ```python
 axcir.fitMap(3.5, fig=2)
 ```
@@ -90,6 +91,8 @@ axcir.fitMap(3.5, fig=2)
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
 ### FIG3 - FITMAP with 3.5 mas step, after removing companion
+CANDID offers the possibility, once a companion has been detected, to remove it analytically from the data and rerun a FITMAP. This allows to estimate the dynamic range of the data set, but also to detect fainter tertiary compents.
+
 ```python
 p = {'x':6.24, 'y':-28.5, 'f':0.0094}
 axcir.fitMap(3.5, fig=3, removeCompanion=p)
