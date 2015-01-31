@@ -583,6 +583,7 @@ class Open:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH':
                 self.wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
                 self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
+                self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
                 self.dwavel[hdu.header['INSNAME']]=np.mean(self.all_dwavel[hdu.header['INSNAME']])
 
         # -- load all data:
@@ -1138,7 +1139,7 @@ class Open:
         for ii, i in enumerate(np.argsort([x['chi2'] for x in allMin2])):
             print ' > BEST FIT %d: chi2=%5.2f'%(ii, allMin2[i]['chi2'])
             for s in ['x', 'y', 'f', 'diam*']:
-                print ' | %5s='%s, '%6.2e +- %6.2e'%(allMin2[i]['best'][s], allMin2[i]['uncer'][s])
+                print ' | %5s='%s, '%9.2e +- %6.2e'%(allMin2[i]['best'][s], allMin2[i]['uncer'][s])
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print ' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD, allMin2[i]['chi2'], self.ndata()-1),
@@ -1194,7 +1195,7 @@ class Open:
         tmp = ['x', 'y', 'f', 'diam*']
         tmp.extend(fitAlso)
         for s in tmp:
-            print ' | %5s='%s, '%6.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
+            print ' | %5s='%s, '%9.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
 
         if addfits:
             #print ' > updating OIFITS file:', filename
