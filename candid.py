@@ -152,12 +152,16 @@ def _modelObservables(obs, param, approx=False):
     param -> see _Vbin
 
     Observations are entered as:
-    obs = [('v2', u, v, wavel, ...),
-           ('cp', u1, v1, u2, v2, wavel, ...),
-           ('t3', u1, v1, u2, v2, wavel, ...)]
+    obs = [('v2;ins', u, v, wavel, ...),
+           ('cp;ins', u1, v1, u2, v2, wavel, ...),
+           ('t3;ins', u1, v1, u2, v2, wavel, ...)]
     each tuple can be longer, the '...' part will be ignored
 
     units: u,v in m; wavel in um
+
+    width of the wavelength channels in param:
+    - a global "dwavel" is defined, the width of the pixels
+    - "dwavel;ins" average value per intrument
 
     for CP and T3, the third u,v coordinate is computed as u1+u2, v1+v2
     """
@@ -166,23 +170,30 @@ def _modelObservables(obs, param, approx=False):
     res = [0.0 for o in obs]
     # -- copy parameters:
     tmp = {k:param[k] for k in param.keys()}
+    tmp['f'] = np.abs(tmp['f'])
     for i, o in enumerate(obs):
-        if o[0]=='v2':
+        if 'dwavel' in tmp:
+            dwavel = tmp['dwavel']
+        elif 'dwavel;'+o[0].split(';')[1] in tmp:
+            dwavel = tmp['dwavel;'+o[0].split(';')[1]]
+        else:
+            dwavel = None
+        if o[0].split(';')[0]=='v2':
             tmp['wavel'] = o[3]
             if not approx:
-                if not 'dwavel' in tmp: # -- monochromatic
+                if dwavel is None: # -- monochromatic
                     res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
                 else: # -- bandwidth smearing
                     wl0 = tmp['wavel']
                     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                        tmp['wavel'] = wl0 + x*tmp['dwavel']
+                        tmp['wavel'] = wl0 + x*dwavel
                         res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
                     tmp['wavel'] = wl0
                     res[i] /= float(CONFIG['n_smear'])
             else:
                 # -- approximation
                 B = np.sqrt(o[1]**2+o[2]**2)
-                if not 'dwavel' in tmp: # -- monochromatic
+                if dwavel is None: # -- monochromatic
                     phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/tmp['wavel']
                     Vstar = _Vud(B, tmp['diam*'], tmp['wavel'])
                     res[i] = np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
@@ -190,9 +201,9 @@ def _modelObservables(obs, param, approx=False):
                 else: # -- with bandwidth smearing:
                     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
                         phi = 2*np.pi*c*(tmp['x']*o[1]+tmp['y']*o[2])/\
-                                        (tmp['wavel']+x*tmp['dwavel'])
+                                        (tmp['wavel']+x*dwavel)
                         Vstar = _Vud(B, tmp['diam*'],
-                                    tmp['wavel']+x*tmp['dwavel'])
+                                    tmp['wavel']+x*dwavel)
                         # -- Antoine:
                         # res[i] += np.abs((Vstar + tmp['f']*Vstar*np.cos(phi))/\
                         #               (1 + tmp['f']))**2
@@ -202,10 +213,10 @@ def _modelObservables(obs, param, approx=False):
                                     (1 + tmp['f'])**2
                     res[i] /= float(CONFIG['n_smear'])
 
-        elif o[0]=='cp' or o[0]=='t3':
+        elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3':
             tmp['wavel'] = o[5]
             if not approx: # -- approximation
-                if not 'dwavel' in tmp: # -- monochromatic
+                if dwavel is None: # -- monochromatic
                     t3 = _Vbin([o[1], o[2]], tmp)*\
                          _Vbin([o[3], o[4]], tmp)*\
                          np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
@@ -213,15 +224,15 @@ def _modelObservables(obs, param, approx=False):
                     wl0 = tmp['wavel']
                     t3 = 0.0
                     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                        tmp['wavel'] = wl0 + x*tmp['dwavel']
+                        tmp['wavel'] = wl0 + x*dwavel
                         _t3 = _Vbin([o[1], o[2]], tmp)*\
                               _Vbin([o[3], o[4]], tmp)*\
                               np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
                         t3 += _t3/float(CONFIG['n_smear'])
                     tmp['wavel'] = wl0
-                if o[0]=='cp':
+                if o[0].split(';')[0]=='cp':
                     res[i] = np.angle(t3)
-                elif o[0]=='t3':
+                elif o[0].split(';')[0]=='t3':
                     res[i] = np.absolute(t3)
 
             else:
@@ -236,12 +247,12 @@ def _modelObservables(obs, param, approx=False):
                 Vstar12 = np.abs(_Vud(B12, tmp['diam*'], tmp['wavel']))
                 Vstar23 = np.abs(_Vud(B23, tmp['diam*'], tmp['wavel']))
                 Vstar31 = np.abs(_Vud(B31, tmp['diam*'], tmp['wavel']))
-                if o[0]=='cp':
+                if o[0].split(';')[0]=='cp':
                     cp = tmp['f']*(np.sin(phi12)/Vstar12 +
                                      np.sin(phi23)/Vstar23 -
                                      np.sin(phi31)/Vstar31)
                     res[i] = -cp
-                elif o[0]=='t3':
+                elif o[0].split(';')[0]=='t3':
                     # --
                     res[i] = (Vstar12*Vstar23*Vstar31 + tmp['f']*(
                               Vstar12*np.cos(phi12) +
@@ -293,7 +304,7 @@ def _injectCompanionData(data, delta, param):
     res = [[x if isinstance(x, str) else x.copy() for x in d] for d in data] # copy the data
     c = np.pi/180/3600000.*1e6
     for i,d in enumerate(res):
-        if d[0]=='v2':
+        if d[0].split(';')[0]=='v2':
             if not 'dwavel' in param.keys():
                 phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[3]
                 d[-2] = (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
@@ -305,7 +316,7 @@ def _injectCompanionData(data, delta, param):
                     tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
                 d[-2] = tmp/float(CONFIG['n_smear'])
 
-        if d[0]=='cp':
+        if d[0].split(';')[0]=='cp':
             if not 'dwavel' in param.keys():
                 phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
                 phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
@@ -336,7 +347,7 @@ def _injectCompanionData(data, delta, param):
                 # -- Alex's:
                 d[-2] -= np.angle(tmp/float(CONFIG['n_smear']))
 
-        if d[0]=='t3':
+        if d[0].split(';')[0]=='t3':
             if not 'dwavel' in param.keys():
                 phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
                 phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
@@ -367,10 +378,10 @@ def _injectCompanionData(data, delta, param):
                 d[-2] *= np.abs(tmp/float(CONFIG['n_smear'])) /(1+param['f'])**3
     return res
 
-def _fitFunc(param, chi2Data, observables):
+def _fitFunc(param, chi2Data, observables, fitAlso=None):
     _meas, _errs = np.array([]), np.array([])
     for c in chi2Data:
-        if c[0] in observables:
+        if c[0].split(';')[0] in observables:
             _meas = np.append(_meas, c[-2].flatten())
             _errs = np.append(_errs, c[-1].flatten())
     _errs += _errs==0. # remove bad point in a dirty way
@@ -379,8 +390,10 @@ def _fitFunc(param, chi2Data, observables):
         fitOnly.extend(['x', 'y', 'f'])
     if 'v2' in observables or 't3' in observables:
        fitOnly.append('diam*')
+    if not fitAlso is None:
+        fitOnly.extend(fitAlso)
     res = _dpfit_leastsqFit(_modelObservables,
-                            filter(lambda c: c[0] in observables, chi2Data),
+                            filter(lambda c: c[0].split(';')[0] in observables, chi2Data),
                             param, _meas, _errs, fitOnly = fitOnly)
     if '_k' in param.keys():
         res['_k'] = param['_k']
@@ -395,11 +408,11 @@ def _chi2Func(param, chi2Data, observables):
     """
     _meas, _errs = np.array([]), np.array([])
     for c in chi2Data:
-        if c[0] in observables:
+        if c[0].split(';')[0] in observables:
             _meas = np.append(_meas, c[-2].flatten())
             _errs = np.append(_errs, c[-1].flatten())
     _errs += _errs==0. # remove bad point in a dirty way
-    res = (_meas-_modelObservables(filter(lambda c: c[0] in observables, chi2Data), param))**2/_errs**2
+    res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))**2/_errs**2
     res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
     res = np.mean(res)
     if '_i' in param.keys() and '_j' in param.keys():
@@ -427,7 +440,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
         # -- reference chi2 for UD
         chi2_0 = _chi2Func(tmp, chi2Data, observables)[-1]
 
-    ndata = np.sum([c[-1].size for c in chi2Data if c[0] in observables])
+    ndata = np.sum([c[-1].size for c in chi2Data if c[0].split(';')[0] in observables])
     n = 0
     while cond:
         if method=='Absil':
@@ -435,8 +448,10 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
             nsigma.append(_nSigmas(_chi2Func(param, chi2Data, observables)[-1], chi2_0, ndata))
         else:
             fr.append(param['f'])
-            data = _injectCompanionData([chi2Data[k] for k in range(len(chi2Data)) if chi2Data[k][0] in observables],
-                                        [delta[k] for k in range(len(delta)) if chi2Data[k][0] in observables],
+            data = _injectCompanionData([chi2Data[k] for k in range(len(chi2Data))
+                                                if chi2Data[k][0].split(';')[0]  in observables],
+                                        [delta[k] for k in range(len(delta))
+                                                if chi2Data[k][0].split(';')[0] in observables],
                                         param)
             tmp = {k:param[k] if k!='f' else 0.0 for k in param.keys()}
             a, b = _chi2Func(tmp, data, observables)[-1], _chi2Func(param, data, observables)[-1]
@@ -491,7 +506,7 @@ class Open:
         print ' > loading file', filename
         self.filename = filename
         self._loadOifitsData()
-        self.observables = list(set([c[0] for c in self._rawData]))
+        self.observables = list(set([c[0].split(';')[0] for c in self._rawData]))
         print ' | observables available: [',
         print ', '.join(["'"+o+"'" for o in self.observables])+']'
         self._chi2Data = self._rawData
@@ -519,10 +534,13 @@ class Open:
 
         if forcedDiam is None and \
             ('v2' in self.observables or 't3' in self.observables) and\
-            ('v2' in [c[0] for c in self._chi2Data] or
-             't3' in [c[0] for c in self._chi2Data]):
-            fit_0 = _fitFunc({'x':0, 'y':0, 'f':0, 'diam*':0.1,'dwavel':self.dwavel},
-                             self._chi2Data, self.observables)
+            ('v2' in [c[0].split(';')[0] for c in self._chi2Data] or
+             't3' in [c[0].split(';')[0] for c in self._chi2Data]):
+            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
+            for _k in self.dwavel.keys():
+                tmp['dwavel'+_k] = self.dwavel[_k]
+            fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
+
             print ' > UD Fit'
             self.chi2_UD = fit_0['chi2']
             print ' | best fit diameter: %5.3f +- %5.3f mas'%(fit_0['best']['diam*'],
@@ -533,9 +551,11 @@ class Open:
         elif not self.diam is None:
             print ' > UD CHI2 (no fit!)'
             print ' | Chi2 UD for diam=%4.3fmas'%self.diam
-            self.chi2_UD = _chi2Func({'x':0, 'y':0, 'f':0, 'diam*':self.diam,
-                                     'dwavel':self.dwavel},
-                               self._chi2Data, self.observables)
+            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
+            for _k in self.dwavel.keys():
+                tmp['dwavel'+_k] = self.dwavel[_k]
+            fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
+            self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables)
             self.ediam = np.nan
             print ' |  chi2 UD = %4.3f'%self.chi2_UD
         else:
@@ -556,12 +576,15 @@ class Open:
             except:
                 pass
         # -- load wavelength:
-        wavel = {}
+        self.wavel = {}
+        self.dwavel = {} # -- average width of the spectral channels
+        self.all_dwavel = {} # -- width of all the spectral channels
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH':
-                wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
-                #print 'dwavel=', np.abs(np.diff(hdu.data['EFF_WAVE']*1e6).mean())
-                self.dwavel=np.abs(np.diff(hdu.data['EFF_WAVE']*1e6).mean())
+                self.wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
+                self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
+                self.dwavel[hdu.header['INSNAME']]=np.mean(self.all_dwavel[hdu.header['INSNAME']])
+
         # -- load all data:
         self._rawData, self._delta = [], []
         for hdu in self._fitsHandler[1:]:
@@ -570,37 +593,37 @@ class Open:
                 # -- CP
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('cp',
-                      hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['U2COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['V2COORD'][:,None]+0*wavel[ins][None,:],
-                      wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*wavel[ins][None,:],
+                self._rawData.append(('cp;'+ins,
+                      hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                      self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                      hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
                       ins,
                       data,
                       hdu.data['T3PHIERR']*np.pi/180))
                 # -- T3
                 data = hdu.data['T3AMP']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('t3',
-                      hdu.data['U1COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['V1COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['U2COORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['V2COORD'][:,None]+0*wavel[ins][None,:],
-                      wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*wavel[ins][None,:], ins,
+                self._rawData.append(('t3;'+ins,
+                      hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                      self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                      hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:], ins,
                       data,
                       hdu.data['T3AMPERR']))
             if hdu.header['EXTNAME']=='OI_VIS2':
                 ins = hdu.header['INSNAME']
                 data = hdu.data['VIS2DATA']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('v2',
-                      hdu.data['UCOORD'][:,None]+0*wavel[ins][None,:],
-                      hdu.data['VCOORD'][:,None]+0*wavel[ins][None,:],
-                      wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*wavel[ins][None,:],
+                self._rawData.append(('v2;'+ins,
+                      hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
+                      hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
+                      self.wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
+                      hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
                       ins,
                       data,
                       hdu.data['VIS2ERR']))
@@ -608,7 +631,7 @@ class Open:
         # -- compute a flatten version of all V2:
         allV2 = {'u':np.array([]), 'v':np.array([]), 'mjd':np.array([]),
                  'wl':np.array([]), 'v2':np.array([])}
-        for r in filter(lambda x: x[0]=='v2', self._rawData):
+        for r in filter(lambda x: x[0].split(';')[0]=='v2', self._rawData):
             allV2['u'] = np.append(allV2['u'], r[1].flatten())
             allV2['v'] = np.append(allV2['v'], r[2].flatten())
             allV2['wl'] = np.append(allV2['wl'], r[3].flatten())
@@ -618,7 +641,7 @@ class Open:
         # -- delta for approximation, very long!
         self._delta = []
         for r in self._rawData:
-            if r[0] in ['cp', 't3']:
+            if r[0].split(';')[0] in ['cp', 't3']:
                 # -- this will contain the delta for this r
                 vis1, vis2, vis3 = np.zeros(r[-2].shape), np.zeros(r[-2].shape), np.zeros(r[-2].shape)
                 for i in range(r[-2].shape[0]):
@@ -643,13 +666,14 @@ class Open:
                         if not np.isnan(r[-2][i,j]):
                             vis3[i,j] = np.sqrt(allV2['v2'][k3])
                 self._delta.append((vis1, vis2, vis3))
-            if r[0] == 'v2':
+            if r[0].split(';')[0] == 'v2':
                 self._delta.append(None)
+        #print [r[0] for r in self._rawData]
         return
     def ndata(self):
         tmp = 0
         for c in self._chi2Data:
-            if c[0] in self.observables:
+            if c[0].split(';')[0] in self.observables:
                 tmp += len(c[-1].flatten())
         return tmp
     def close(self):
@@ -738,10 +762,12 @@ class Open:
         params, Ntest = [], 10*max(multiprocessing.cpu_count()-1,1)
         for i in range(Ntest):
             o = np.random.rand()*2*np.pi
-            params.append(({'x':np.cos(o)*(self.rmax+self.rmin),
+            tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                       'y':np.sin(o)*(self.rmax+self.rmin),
-                      'f':0.01, 'dwavel':self.dwavel, 'diam*':self.diam},
-                      self._chi2Data, self.observables))
+                      'f':0.01, 'diam*':self.diam}
+            for _k in self.dwavel.keys():
+                tmp['dwavel;'+_k] = self.dwavel[_k]
+            params.append((tmp,self._chi2Data, self.observables))
         est = self.estimateRunTime(_chi2Func, params)
         est *= np.sum(self.mapChi2>=0)
         print '... it should take about %d seconds'%(int(est))
@@ -761,7 +787,10 @@ class Open:
             for j,y in enumerate(allY):
                 if self.mapChi2[j,i]==0:
                     params = {'x':x, 'y':y, 'f':fratio, 'diam*':self.diam,
-                              '_i':i, '_j':j, 'dwavel':self.dwavel}
+                              '_i':i, '_j':j,}
+                    for _k in self.dwavel.keys():
+                        params['dwavel;'+_k] = self.dwavel[_k]
+
                     # -- multi-thread:
                     p.apply_async(_chi2Func, (params, self._chi2Data, self.observables),
                                   callback=self._cb_chi2Map)
@@ -908,10 +937,13 @@ class Open:
         params, Ntest = [], max(multiprocessing.cpu_count()-1,1)
         for i in range(Ntest):
             o = np.random.rand()*2*np.pi
-            params.append(({'x':np.cos(o)*(self.rmax+self.rmin),
+            tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                       'y':np.sin(o)*(self.rmax+self.rmin),
-                      'f':0.02, 'dwavel':self.dwavel, 'diam*':self.diam},
-                      self._chi2Data, self.observables))
+                      'f':0.02, 'diam*':self.diam}
+            for _k in self.dwavel.keys():
+                tmp['dwavel;'+_k] = self.dwavel[_k]
+
+            params.append((tmp, self._chi2Data, self.observables))
         est = self.estimateRunTime(_fitFunc, params)
         est *= self.Nfits
         print '... it should take about %d seconds'%(int(est))
@@ -930,8 +962,11 @@ class Open:
         for y in Y:
             for x in X:
                 if x**2+y**2>=self.rmin**2 and x**2+y**2<=self.rmax**2:
-                    params.append({'diam*': self.diam, 'f':fr, 'x':x, 'y':y, 'dwavel':self.dwavel,
-                                  '_k':k})
+                    tmp={'diam*': self.diam, 'f':fr,
+                                  'x':x, 'y':y, '_k':k}
+                    for _k in self.dwavel.keys():
+                        tmp['dwavel;'+_k] = self.dwavel[_k]
+                    params.append(tmp)
                     # -- multiple threads:
                     p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables),
                                   callback=self._cb_fitFunc)
@@ -999,7 +1034,6 @@ class Open:
         if len(allMin)/float(N*N)>0.5 or\
              2*self.rmax/float(N)*np.sqrt(2)/2>np.median([f['dist'] for f in self.allFits]):
             print ' | \033[41mWARNING, grid is too wide!!!',
-            #print '--> try N=%d\033[0m'%(np.ceil(self.Nopt))
             print '--> try step=%4.2fmas\033[0m'%(2.*self.rmax/float(self.Nopt))
             reliability = 'unreliable'
         elif N>1.2*self.Nopt:
@@ -1018,9 +1052,12 @@ class Open:
                                          Y[-1]+np.diff(Y)[0]/2.,
                                          2*len(Y)+1))
 
-        rbf = scipy.interpolate.Rbf([x['best']['x'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
-                                    [x['best']['y'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
-                                    [x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
+        rbf = scipy.interpolate.Rbf([x['best']['x'] for x in self.allFits
+                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
+                                    [x['best']['y'] for x in self.allFits
+                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
+                                    [x['chi2'] for x in self.allFits
+                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
                                     function='linear')
         _Z = rbf(_X, _Y)
         _Z[_X**2+_Y**2<self.rmin**2] = self.chi2_UD
@@ -1106,9 +1143,14 @@ class Open:
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print ' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD, allMin2[i]['chi2'], self.ndata()-1),
             print '-> n sigma: %5.2f'%allMin2[i]['nsigma']
-            x0 = allMin2[i]['best']['x']#+self.rmax/float(N)
-            y0 = allMin2[i]['best']['y']#+self.rmax/float(N)
+            x0 = allMin2[i]['best']['x']
+            ex0 = allMin2[i]['uncer']['x']
+            y0 = allMin2[i]['best']['y']
+            ey0 = allMin2[i]['uncer']['y']
+            f0 = allMin2[i]['best']['f']
+            ef0 = allMin2[i]['uncer']['f']
             s0 = allMin2[i]['nsigma']
+
             # -- draw cross hair
             for ax in [ax1, ax2]:
                 ax.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
@@ -1130,21 +1172,29 @@ class Open:
         self.compParam.pop('_k')
         self.compUncer.pop('_k')
 
-        x0 = [x['best']['x'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        ex0 = [x['uncer']['x'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        y0 = [x['best']['y'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        ey0 = [x['uncer']['y'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        f0 = [x['best']['f'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        ef0 = [x['uncer']['f'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        c0 = [x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-
-        #ret = [x for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        # -- compare with injected companion
+        # -- compare with injected companion, if any
         if 'X' in self._dataheader.keys() and 'Y' in self._dataheader.keys() and 'F' in self._dataheader.keys():
             print 'injected X:', self._dataheader['X'], 'found at %3.1f sigmas'%((x0-self._dataheader['X'])/ex0)
             print 'injected Y:', self._dataheader['Y'], 'found at %3.1f sigmas'%((y0-self._dataheader['Y'])/ey0)
             print 'injected F:', self._dataheader['F'], 'found at %3.1f sigmas'%((f0-self._dataheader['F'])/ef0)
             ax1.plot(self._dataheader['X'], self._dataheader['Y'], 'py', markersize=12, alpha=0.3)
+
+        # -- do an additional fit by fitting also the badwidth smearing
+        param = self.compParam
+        fitAlso = filter(lambda x: x.startswith('dwavel'), param)
+        print ' > fixed bandwidth parameters for the map (in um):'
+        for s in fitAlso:
+            print ' | %s = '%s, param[s]
+        print '*'*67
+        print '*'*3, 'do an additional fit by fitting also the bandwidth smearing', '*'*3
+        print '*'*67
+
+        fit = _fitFunc(param, self._chi2Data, self.observables, fitAlso)
+        print '  > chi2 = %5.3f'%fit['chi2']
+        tmp = ['x', 'y', 'f', 'diam*']
+        tmp.extend(fitAlso)
+        for s in tmp:
+            print ' | %5s='%s, '%6.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
 
         if addfits:
             #print ' > updating OIFITS file:', filename
@@ -1253,10 +1303,12 @@ class Open:
         Ntest = max(multiprocessing.cpu_count()-1,1)
         params = []
         for k in range (Ntest):
-            params.append({'x':10*np.random.rand(),
+            tmp = {'x':10*np.random.rand(),
                            'y':10*np.random.rand(),
-                           'f':0.01, 'diam*':self.diam,
-                           'dwavel':self.dwavel})
+                           'f':0.01, 'diam*':self.diam}
+            for _k in self.dwavel.keys():
+                tmp['dwavel;'+_k] = self.dwavel[_k]
+            params.append(tmp)
         # -- Absil is twice as fast as injection
         est = 1.5*self.estimateRunTime(_detectLimit, params)
         est *= N**2
@@ -1289,7 +1341,9 @@ class Open:
                 for j,y in enumerate(allY):
                     if self.f3s[j,i]==0:
                         params = {'x':x, 'y':y, 'f':0.01, 'diam*':self.diam,
-                                  '_i':i, '_j':j, 'dwavel':self.dwavel}
+                                  '_i':i, '_j':j}
+                        for _k in self.dwavel.keys():
+                            params['dwavel;'+_k] = self.dwavel[_k]
                         # -- parallel:
                         p.apply_async(_detectLimit, (params, self._chi2Data, self.observables,
                                        self._delta, method), callback=self._cb_nsigmaFunc)
@@ -1397,7 +1451,7 @@ def sliding_percentile(x, y, dx, percentile=50, smooth=True):
     else:
         return res
 
-def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False, doNotFit=[], epsfcn=1e-7, ftol=1e-5, fullOutput=True, normalizedUncer=True, follow=None):
+def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False, doNotFit=[], epsfcn=1e-6, ftol=1e-5, fullOutput=True, normalizedUncer=True, follow=None):
     """
     - params is a Dict containing the first guess.
 
