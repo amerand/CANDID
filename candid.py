@@ -501,8 +501,7 @@ class Open:
             self.rmax = self.smearFov
             print " | \033[43mrmax= not given, set to Field of View: rmax=%5.2f mas\033[0m"%self.rmax
         self.diam = None
-        self.compParam = None
-        self.compUncer = None
+        self.bestFit = None
         self.Ncores = Ncores
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
@@ -693,10 +692,12 @@ class Open:
         return
     def ndata(self):
         tmp = 0
+        nan = 0
         for c in self._chi2Data:
             if c[0].split(';')[0] in self.observables:
                 tmp += len(c[-1].flatten())
-        return tmp
+                nan += np.sum(1-(1-np.isnan(c[-1]))*(1-np.isnan(c[-2])))
+        return tmp-nan
     def close(self):
         self._fitsHandler.close()
         return
@@ -931,7 +932,6 @@ class Open:
             N = int(np.ceil(2*self.rmax/step))
         except:
             print 'ERROR: you should define rmax first!'
-        fr = 0.02
         self.rmin = max(step, self.rmin)
         print ' > observables:', self.observables
 
@@ -970,7 +970,7 @@ class Open:
             o = np.random.rand()*2*np.pi
             tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                       'y':np.sin(o)*(self.rmax+self.rmin),
-                      'f':1.0, 'diam*':self.diam}
+                      'f':2.0, 'diam*':self.diam}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append((tmp, self._chi2Data, self.observables))
@@ -992,7 +992,7 @@ class Open:
         for y in Y:
             for x in X:
                 if x**2+y**2>=self.rmin**2 and x**2+y**2<=self.rmax**2:
-                    tmp={'diam*': self.diam, 'f':fr,
+                    tmp={'diam*': self.diam, 'f':2.0,
                                   'x':x, 'y':y, '_k':k}
                     for _k in self.dwavel.keys():
                         tmp['dwavel;'+_k] = self.dwavel[_k]
@@ -1061,8 +1061,8 @@ class Open:
         self.Nopt = max(np.sqrt(2*len(allMin)), self.rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
         self.Nopt = int(np.ceil(self.Nopt))
         self.stepOptFitMap = 2*self.rmax/self.Nopt
-        if len(allMin)/float(N*N)>0.5 or\
-             2*self.rmax/float(N)*np.sqrt(2)/2>np.median([f['dist'] for f in self.allFits]):
+        if len(allMin)/float(N*N)>0.6 or\
+             2*self.rmax/float(N)*np.sqrt(2)/2 > 1.1*np.median([f['dist'] for f in self.allFits]):
             print ' | \033[41mWARNING, grid is too wide!!!',
             print '--> try step=%4.2fmas\033[0m'%(2.*self.rmax/float(self.Nopt))
             reliability = 'unreliable'
@@ -1199,10 +1199,8 @@ class Open:
 
         # -- best fit parameters:
         j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2])
-        self.compParam = [x['best'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        self.compUncer = [x['uncer'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
-        self.compParam.pop('_k')
-        self.compUncer.pop('_k')
+        self.bestFit = [x for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
+        self.bestFit['best'].pop('_k')
 
         # -- compare with injected companion, if any
         if 'X' in self._dataheader.keys() and 'Y' in self._dataheader.keys() and 'F' in self._dataheader.keys():
@@ -1213,7 +1211,7 @@ class Open:
 
         # -- do an additional fit by fitting also the bandwidth smearing
         if False:
-            param = self.compParam
+            param = self.bestFit['best']
             fitAlso = filter(lambda x: x.startswith('dwavel'), param)
             print ' > fixed bandwidth parameters for the map (in um):'
             for s in fitAlso:
@@ -1230,21 +1228,32 @@ class Open:
                 print ' | %5s='%s, '%9.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
 
         return
-    def fitBoot(self, N=1000, param=None, fig=2):
+    def fitBoot(self, N=None, param=None, fig=2):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap.
         """
-
         if param is None:
             try:
-                param = self.compParam
+                param = self.bestFit['best']
                 print ' > inital parameters set to param=', param
             except:
-                print ' > ERROR: please set param= do the initial conditions (or run fitMap)'
-                print " | param={'x':, 'y':, 'f':, 'diam*':}"
+                print ' > \033[41mERROR: please set param= do the initial conditions (or run fitMap)\033[0m'
+                print " | \033[41mparam={'x':, 'y':, 'f':, 'diam*':}\033[0m"
                 return
-        print '> running %d fit'%N,
+        try:
+            for k in ['x', 'y', 'f', 'diam*']:
+                if not k in param.keys():
+                    print ' > \033[41mERROR: please set param= do the initial conditions (or run fitMap)\033[0m'
+                    print " | \033[41mparam={'x':, 'y':, 'f':, 'diam*':}\033[41m"
+                    return
+        except:
+            pass
+        if N is None:
+            print " > \033[43m'N=' not given, setting it to Ndata / 3\033[0m"
+            N = self.ndata()/3
+
+        print " > running 'N='%d fit"%N,
         self._progTime = [time.time(), time.time()]
         self.allFits, self._prog = [{} for k in range(N)], 0.0
         self.Nfits = N
@@ -1257,6 +1266,8 @@ class Open:
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append((tmp, self._chi2Data, self.observables))
         est = self._estimateRunTime(_fitFunc, params)
+        refFit = _fitFunc(tmp, self._chi2Data, self.observables)
+
         est *= self.Nfits
         print '... it should take about %d seconds'%(int(est))
         self.allFits, self._prog = [{} for k in range(N)], 0.0
@@ -1284,7 +1295,7 @@ class Open:
                 # -- Bootstrapping: set 'fracIgnored'% of the data to Nan (ignored)
                 mask = np.random.rand(data[-1][-1].shape[0])
                 mask = np.float_(mask>=fracIgnored) # ignored some points
-                mask[mask==1] *= 1 + (np.random.rand(int(np.sum(mask)))<=fracIgnored)
+                mask[mask==1] *= 1 + (np.random.rand(int(np.sum(mask)))<=fracIgnored) # points seen twice
                 mask[mask==0] += np.nan
                 data[-1][-1] = d[-1]/mask[:,None]
                 # -------------------------------------------------------------------------------
@@ -1299,7 +1310,7 @@ class Open:
                             right=0.98, top=0.90,
                             wspace=0.3, hspace=0.3)
             title = "CANDID: bootstrapping error bars, %d rounds"%N
-            title += ' Using '+', '.join(self.observables)
+            title += ' using '+', '.join(self.observables)
             title += '\n'+os.path.basename(self.filename)
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
@@ -1309,54 +1320,66 @@ class Open:
                             wspace=0.3, hspace=0.3)
         kz = self.allFits[0]['fitOnly']
         kz.sort()
-        kz.append('chi2')
         ax = {}
         # -- sigma cliping on the chi2
         chi2 = np.array([a['chi2'] for a in self.allFits])
         w = np.where((chi2<=np.median(chi2) + 5*(np.percentile(chi2, 84)-np.median(chi2)))*
                      (chi2>=np.median(chi2) + 5*(np.percentile(chi2, 16)-np.median(chi2))))
+        ax = {}
         for i1,k1 in enumerate(kz):
             for i2,k2 in enumerate(kz):
-                if k1=='chi2':
-                    X = np.array([a['chi2'] for a in self.allFits])[w]
-                else:
-                    X = np.array([a['best'][k1] for a in self.allFits])[w]
-                if k2=='chi2':
-                    Y = np.array([a['chi2'] for a in self.allFits])[w]
-                else:
-                    Y = np.array([a['best'][k2] for a in self.allFits])[w]
+                X = np.array([a['best'][k1] for a in self.allFits])[w]
+                Y = np.array([a['best'][k2] for a in self.allFits])[w]
 
                 if i1<i2:
-                    ax = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
+                    if i1>0:
+                        ax[(i1,i2)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1,
+                                                  sharex=ax[(i1,i1)],
+                                                  sharey=ax[(0,i2)])
+                    else:
+                        ax[(i1,i2)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1,
+                                                  sharex=ax[(i1,i1)])
                     if i1==0 and i2>0:
                         plt.ylabel(k2)
-                    plt.plot(X, Y, 'ok', alpha=max(0.1, 0.5-0.13*np.log10(N)))
-                    ax.set_xticks(ax.get_xticks()[::2])
-                    ax.set_yticks(ax.get_yticks()[::2])
+                    plt.plot(X, Y, 'ok', alpha=max(0.15, 0.5-0.12*np.log10(N)))
+                    plt.errorbar(refFit['best'][k1], refFit['best'][k2],
+                                 xerr=refFit['uncer'][k1], yerr=refFit['uncer'][k2],
+                                 color='r', fmt='s', markersize=8, elinewidth=3,
+                                 alpha=0.8, capthick=3, linewidth=3)
+                    nSigma=1
+                    # -- plot boot strap ellipse:
+                    p = pca(np.transpose(np.array([(X-X.mean()),
+                                       (Y-Y.mean())])))
+                    _a = np.arctan2(p.base[0][0], p.base[0][1])
+                    err0 = p.coef[:,0].std()
+                    err1 = p.coef[:,1].std()
+                    th = np.linspace(0,2*np.pi,100)
+                    _x, _y = nSigma*err0*np.cos(th), nSigma*err1*np.sin(th)
+                    _x, _y = X.mean() + _x*np.cos(_a+np.pi/2) + _y*np.sin(_a+np.pi/2), \
+                             Y.mean() - _x*np.sin(_a+np.pi/2) + _y*np.cos(_a+np.pi/2)
+                    plt.plot(_x, _y, linestyle='-', color='b', linewidth=2)
+
+                    if len(ax[(i1,i2)].get_yticks())>5:
+                        ax[(i1,i2)].set_yticks(ax[(i1,i2)].get_yticks()[::2])
+
                 if i1==i2:
+                    ax[(i1,i1)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
                     med = np.median(X)
                     errp = np.median(X)-np.percentile(X, 16)
                     errm = np.percentile(X, 84)-np.median(X)
-                    print '%s = %8.4f +%8.4f -%8.4f'%(k1, med, errp, errm)
                     n = int(max(2-np.log10(errp), 2-np.log10(errm)))
                     form = '%s = $%'+str(int(n+2))+'.'+str(int(n))+'f'
                     form += '^{+%'+str(int(n+2))+'.'+str(int(n))+'f}'
                     form += '_{-%'+str(int(n+2))+'.'+str(int(n))+'f}$'
-                    ax = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
-                    #print form
                     plt.title(form%(k1, med, errp,errm))
-                    plt.hist(X)
-                    ax.set_xticks(ax.get_xticks()[::2])
-                    #ax.set_yticks(ax.get_yticks()[::2])
-                    ax.set_yticks([])
+                    plt.hist(X, color='0.5', bins=max(10, N/30))
+                    ax[(i1,i2)].set_yticks([])
+                    if len(ax[(i1,i2)].get_xticks())>5:
+                        ax[(i1,i2)].set_xticks(ax[(i1,i2)].get_xticks()[::2])
+
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
-
         return
-
-        print self.allFits[0].keys()
-
-
     def _cb_nsigmaFunc(self, r):
         """
         callback function for detectionLimit()
@@ -1815,3 +1838,39 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
             except:
                 print ''
     return res
+
+class pca():
+    """
+    principal component analysis
+    """
+    def __init__(self,data):
+        """
+        data[i,:] is ith data
+        creates 'var' (variances), 'base' (base[i,:] are the base,
+        sorted from largest constributor to the least important. .coef
+        """
+        self.data     = data
+        self.data_std = np.std(self.data, axis=0)
+        self.data_avg = np.mean(self.data,axis=0)
+
+        # variance co variance matrix
+        self.varcovar  = (self.data-self.data_avg[np.newaxis,:])
+        self.varcovar = np.dot(np.transpose(self.varcovar), self.varcovar)
+
+        # diagonalization
+        e,l,v= np.linalg.svd(self.varcovar)
+
+        # projection
+        coef = np.dot(data, e)
+        self.var  = l/np.sum(l)
+        self.base = e
+        self.coef = coef
+        return
+    def comp(self, i=0):
+        """
+        returns component projected along one vector
+        """
+        return self.coef[:,i][:,np.newaxis]*\
+               self.base[:,i][np.newaxis,:]
+
+
