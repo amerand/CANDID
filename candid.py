@@ -130,12 +130,12 @@ def _Vbin(uv, param):
     'diam*': in mas
     'wavel': in um
     'x, y': in mas
-    'f': flux ratio -> takes the absolute value
+    'f': flux ratio in % -> takes the absolute value
     """
     if 'f' in param:
-        f = np.abs(param['f'])
+        f = np.abs(param['f'])/100.
     else:
-        f = param['f']
+        f = param['f']/100.
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
     Vstar = _Vud(B, param['diam*'], param['wavel'])
@@ -295,7 +295,8 @@ def _injectCompanionData(data, delta, param):
             else:
                 f = 1.
 
-            d[-2] = (d[-2] + 2*f*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + f**2*param['f']**2)/(1+param['f'])**2
+            d[-2] = (d[-2] + 2*f*param['f']/100*np.sqrt(np.abs(d[-2]))*np.cos(phi) +
+                     f**2*(param['f']/100.)**2)/(1+param['f']/100.)**2
 
         if d[0].split(';')[0]=='cp' or d[0].split(';')[0]=='t3':
             # if dwavel is None:
@@ -343,13 +344,13 @@ def _injectCompanionData(data, delta, param):
                 f2 = np.abs(np.sin(x)/x)
             else:
                 f0,f1,f2 = 1., 1., 1.
-            tmp = 1 + param['f']*( f0*np.exp(-1j*phi2)/delta[i][2] +
+            tmp = 1 + param['f']/100.*( f0*np.exp(-1j*phi2)/delta[i][2] +
                                   f1*np.exp(1j*phi1)/delta[i][1] +
                                   f2*np.exp(1j*phi0)/delta[i][0] )
             if d[0].split(';')[0]=='cp':
                 d[-2] -= np.angle(tmp)
             else:
-                d[-2] *= np.abs(tmp) /(1+param['f'])**3
+                d[-2] *= np.abs(tmp) /(1+param['f']/100.)**3
 
     return res
 
@@ -398,7 +399,7 @@ def _chi2Func(param, chi2Data, observables):
 
 def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
     """
-    Returns the flux ratio for which the chi2 ratio between binary and UD is 3 sigmas.
+    Returns the flux ratio (in %) for which the chi2 ratio between binary and UD is 3 sigmas.
 
     Uses the postion and diameter given in "Param" and only varies the flux ratio
 
@@ -739,7 +740,7 @@ class Open:
 
         If 'addCompanion' or 'removeCompanion' are defined, a companion will
         be analytically added or removed from the data. define the companion
-        as {'x':mas, 'y':mas, 'f':fratio}. 'f' will be forced to be positive.
+        as {'x':mas, 'y':mas, 'f':fratio in %}. 'f' will be forced to be positive.
         """
         if step is None:
             step = 1/5. * self.minSpatialScale
@@ -787,7 +788,7 @@ class Open:
             o = np.random.rand()*2*np.pi
             tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                       'y':np.sin(o)*(self.rmax+self.rmin),
-                      'f':0.01, 'diam*':self.diam}
+                      'f':1.0, 'diam*':self.diam}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append((tmp,self._chi2Data, self.observables))
@@ -969,7 +970,7 @@ class Open:
             o = np.random.rand()*2*np.pi
             tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                       'y':np.sin(o)*(self.rmax+self.rmin),
-                      'f':0.02, 'diam*':self.diam}
+                      'f':1.0, 'diam*':self.diam}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append((tmp, self._chi2Data, self.observables))
@@ -1324,6 +1325,7 @@ class Open:
                     Y = np.array([a['chi2'] for a in self.allFits])[w]
                 else:
                     Y = np.array([a['best'][k2] for a in self.allFits])[w]
+
                 if i1<i2:
                     ax = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
                     if i1==0 and i2>0:
@@ -1413,7 +1415,7 @@ class Open:
         for k in range (Ntest):
             tmp = {'x':10*np.random.rand(),
                            'y':10*np.random.rand(),
-                           'f':0.01, 'diam*':self.diam}
+                           'f':1.0, 'diam*':self.diam}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append(tmp)
@@ -1448,7 +1450,7 @@ class Open:
             for i,x in enumerate(allX):
                 for j,y in enumerate(allY):
                     if self.f3s[j,i]==0:
-                        params = {'x':x, 'y':y, 'f':0.01, 'diam*':self.diam,
+                        params = {'x':x, 'y':y, 'f':1.0, 'diam*':self.diam,
                                   '_i':i, '_j':j}
                         for _k in self.dwavel.keys():
                             params['dwavel;'+_k] = self.dwavel[_k]
@@ -1476,7 +1478,7 @@ class Open:
                 plt.figure(fig, figsize=(11,10))
                 plt.subplots_adjust(top=0.85, bottom=0.08,
                                     left=0.08, right=0.97)
-                title = "CANDID: flux ratio for 3$\sigma$ detection, "
+                title = "CANDID: flux ratio (%%) for 3$\sigma$ detection, "
                 if self.ediam>0:
                     title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
                 else:
