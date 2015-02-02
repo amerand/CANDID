@@ -34,7 +34,7 @@ see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 
 * **fit Maps**. These are better, but much slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)): this demontrates that, in the case of our example, the secondary "detections" are only artefact from the main companion.
 * **detection limits**. We imlemented 2 methods; Absil's and our companion injection. Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove analyticaly the companion ([FIG5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)).
 
-Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables:
+Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables.
 
 ```python
 >>> import candid
@@ -42,6 +42,8 @@ Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only c
 >>> axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
 >>> axcir.observables=['v2','cp']
 ```
+
+**We strongly recommand you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
 
 ### FIG1 - CHI2MAP: fitted diameter and fixed flux ratio=1%:
 The easiest thing to try is a chi2 map, assuming a certain flux ratio for the companion. This is quite inefficient but CANDID allows to do it. If no parametrization is given (step size 'step=', maximum radius for search 'rmax'), CANDID will guess some values based on the angular resolution and the wavelength smearing field of view. The flux ratio is given in percent.
