@@ -46,10 +46,8 @@ Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only c
 ### FIG1 - CHI2MAP: fitted diameter and fixed flux ratio=1%:
 The easiest thing to try is a chi2 map, assuming a certain flux ratio for the companion. This is quite inefficient but CANDID allows to do it. If no parametrization is given (step size 'step=', maximum radius for search 'rmax'), CANDID will guess some values based on the angular resolution and the wavelength smearing field of view. The flux ratio is given in percent.
 
-```python
+```
 >>> axcir.chi2Map(fig=1, fratio=1.0)
-```
-```
  > step= not given, using 1/6 X smallest spatial scale = 0.45 mas
  > observables: ['v2', 'cp']
  > UD Fit
@@ -66,9 +64,6 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
 
 ### FIG2 - FITMAP:
 Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like for ([FIG1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png))). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size 'step='. In our example below, we let CANDID chose the step size, based on the angular resoultion of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
-```python
-axcir.fitMap(fig=2)
-```
 ```
 >>> axcir.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
@@ -95,7 +90,7 @@ axcir.fitMap(fig=2)
 ### FIG3 - FITMAP, after removing companion
 CANDID offers the possibility, once a companion has been detected, to remove it analytically from the data and rerun a FITMAP. This allows to estimate the dynamic range of the data set, but also to detect fainter tertiary compents. fitMap stores the best fit in the dictionnary "bestFit", which key "best" contains the dictionnary containing the parameters. Note that axcir.bestFit['uncer'] contains the corresponding error bars.
 
-```python
+```
 >>> p = axcir.bestFit['best']
 >>> axcir.fitMap(fig=3, removeCompanion=p)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
@@ -121,9 +116,9 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
 
 ### FIG4 - ERROR BARS:
-In order to better estimate the uncertainties on the companion we found, we can use bootstraping to estimate the incertainties around the best fit parameters. The default starting is the best bitted position
+In order to better estimate the uncertainties on the companion we found, we can use bootstraping to estimate the incertainties around the best fit parameters. The default starting is the best fitted position. The red dot with error bars is the fitted position; the blue ellipses are derived from the boorstrap using a principal component analysis; the values given for each parameters are the median which uncertainties are the 16% and 84% percentile (one sigma).
 
-```python
+```
 >>> axcir.fitBoot(param=p)
  > 'N=' not given, setting it to Ndata / 3
  > running 'N='500 fit ... it should take about 3 seconds
@@ -136,7 +131,7 @@ In order to better estimate the uncertainties on the companion we found, we can 
 ### FIG5 - DETECTION LIMIT, after analyticaly removing companion:
 We here remove the companion analyticaly (using a high contrast hypothesis) from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
 
-```python
+```
 >>> axcir.detectionLimit(fig=5, removeCompanion=p)
  > step= not given, using 1/2 X smallest spatial scale = 0.89 mas
  > observables: ['v2', 'cp']
@@ -156,8 +151,8 @@ We here remove the companion analyticaly (using a high contrast hypothesis) from
 ### CONFIG parameters
 
 A global dictionnary CONFIG to set parameters. The list of default parameters is shown each time the library is loaded. To modidy the parameters, you should do it as such:
-```python
-candid.CONFIG['longExecWarning'] = 300
+```
+>>> candid.CONFIG['longExecWarning'] = 300
 ```
 This will, for example, set the maximum computing time to 300s (instead of the default 180s). Note that this will have to be done every time you import or reload the library.
 
