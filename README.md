@@ -116,7 +116,9 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
 
 ### FIG4 - ERROR BARS:
-In order to better estimate the uncertainties on the companion we found, we can use bootstraping to estimate the incertainties around the best fit parameters. The default starting is the best fitted position. The red dot with error bars is the fitted position; the blue ellipses are derived from the boorstrap using a principal component analysis; the values given for each parameters are the median which uncertainties are the 16% and 84% percentile (one sigma).
+In order to better estimate the uncertainties on the companion we found, we can use bootstraping to estimate the incertainties around the best fit parameters. The default starting is the best fitted position: since we made a fit with an analytical removal of the companion, the currently stored companion is not the one found on Fig2; thankfully we stored it in the variable 'p'.
+
+On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
 
 ```
 >>> axcir.fitBoot(param=p)
@@ -145,8 +147,6 @@ We here remove the companion analyticaly (using a high contrast hypothesis) from
  |================================================== | 99%   0 s remainingg
 ```
 ![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
-
-### FIG6 - ERROR BARS, using bootstrapping
 
 ### CONFIG parameters
 
