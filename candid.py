@@ -96,11 +96,11 @@ def Verify():
     for i,o in enumerate(['v2', 'cp', 't3']):
         print '\nCHI2MAP'
         a.observables = [o]
-        a.chi2Map(.5, fratio=0.01, fig=i+1)
+        a.chi2Map(.5, fratio=1., fig=i+1)
 
     print '\nCHI2MAP'
     a.observables = ['v2', 'cp', 't3']
-    a.chi2Map(.5, fratio=0.01, fig=4)
+    a.chi2Map(.5, fratio=1., fig=4)
 
     print '\nCLOSING:', filename
     a.close()
@@ -744,7 +744,7 @@ class Open:
         """
         if step is None:
             step = 1/5. * self.minSpatialScale
-            print ' > \033[43mstep= given, using 1/5 X smallest spatial scale = %4.2f mas\033[0m'%step
+            print ' > \033[43mstep= not given, using 1/5 X smallest spatial scale = %4.2f mas\033[0m'%step
         # --
         if not rmax is None:
             self.rmax = rmax
@@ -755,7 +755,7 @@ class Open:
             return
         if fratio is None:
             print ' > \033[43mfratio= not given -> using 0.01 (==1%)\033[0m'
-            fratio = 0.01
+            fratio = 1.0
         print ' > observables:', self.observables
 
         if not addCompanion is None:
@@ -842,7 +842,7 @@ class Open:
             plt.figure(fig, figsize=(12,5.8))
             plt.subplots_adjust(top=0.78, bottom=0.08,
                                 left=0.08, right=0.99, wspace=0.10)
-            title = "CANDID: $\chi^2$ Map for f$_\mathrm{ratio}$=%3.1f%% and "%(100*fratio)
+            title = "CANDID: $\chi^2$ Map for f$_\mathrm{ratio}$=%3.1f%% and "%(fratio)
             if self.ediam>0:
                 title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
             else:
@@ -924,7 +924,7 @@ class Open:
         """
         if step is None:
             step = np.sqrt(2) * self.minSpatialScale
-            print ' > \033[43mstep= given, using sqrt(2) x smallest spatial scale = %4.2f mas\033[0m'%step
+            print ' > \033[43mstep= not given, using sqrt(2) x smallest spatial scale = %4.2f mas\033[0m'%step
         if not rmax is None:
             self.rmax = rmax
         try:
@@ -1230,7 +1230,7 @@ class Open:
                 print ' | %5s='%s, '%9.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
 
         return
-    def fitBoot(self, N=100, param=None, fig=2):
+    def fitBoot(self, N=1000, param=None, fig=2):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap.
@@ -1386,7 +1386,7 @@ class Open:
         """
         if step is None:
             step = 1/2. * self.minSpatialScale
-            print ' > \033[43mstep= given, using 1/2 X smallest spatial scale = %4.2f mas\033[0m'%step
+            print ' > \033[43mstep= not given, using 1/2 X smallest spatial scale = %4.2f mas\033[0m'%step
         if not rmax is None:
             self.rmax = rmax
         try:
@@ -1487,7 +1487,7 @@ class Open:
                 title += '\n'+os.path.basename(self.filename)
                 if not removeCompanion is None:
                     title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
-                            removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
+                            removeCompanion['x'], removeCompanion['y'], removeCompanion['f'])
 
                 plt.suptitle(title, fontsize=14, fontweight='bold')
             else:
