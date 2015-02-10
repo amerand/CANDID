@@ -26,7 +26,8 @@ import os
 #__version__ = '0.2 | 2015/01/07' # big clean
 #__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
 #__version__ = '0.4 | 2015/01/30' # modified bandwidth smearing handling
-__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
+#__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
+__version__ = '0.6 | 2015/02/10' # bug fix in smearing
 
 
 print """
@@ -47,7 +48,6 @@ def variables():
     print ' > global parameters (can be updated):'
     for k in CONFIG.keys():
         print "  CONFIG['%s']"%k, CONFIG[k]
-    print '                            _oOo_\n'
     return
 
 variables()
@@ -146,8 +146,10 @@ def _Vbin(uv, param):
     if 'dwavel' in param.keys():
         x = phi*param['dwavel']/param['wavel']/2.
         x += 1e-6*(x==0)
-        f *= np.abs(np.sin(x)/x)
-    res = (Vstar + f*Vcomp)/(1.0+f)
+        c = np.abs(np.sin(x)/x)
+    else:
+        c = 1.0
+    res = (Vstar + c*f*Vcomp)/(1.0+f)
     return res
 
 def _modelObservables(obs, param):
@@ -181,6 +183,7 @@ def _modelObservables(obs, param):
         elif 'dwavel;'+o[0].split(';')[1] in param.keys():
             dwavel = param['dwavel;'+o[0].split(';')[1]]
         else:
+            print o[0]
             dwavel = None
 
         tmp = {k:tmp[k] for k in param.keys() if not k.startswith('dwavel')}
@@ -494,12 +497,12 @@ class Open:
         self.rmin = rmin
         if self.rmin is None:
             self.rmin = self.minSpatialScale
-            print " | \033[43mrmin= not given, set to smallest spatial scale: rmin=%5.2f mas\033[0m"%self.rmin
+            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%self.rmin
 
         self.rmax = rmax
         if self.rmax is None:
             self.rmax = self.smearFov
-            print " | \033[43mrmax= not given, set to Field of View: rmax=%5.2f mas\033[0m"%self.rmax
+            print " | rmax= not given, set to Field of View: rmax=%5.2f mas"%self.rmax
         self.diam = None
         self.bestFit = None
         self.Ncores = Ncores
@@ -524,6 +527,7 @@ class Open:
             tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
+            print tmp
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
 
             print ' > UD Fit'
@@ -595,25 +599,33 @@ class Open:
                 # -- CP
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('cp;'+arr+'-'+ins,
-                      hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
-                      self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                      data, hdu.data['T3PHIERR']*np.pi/180))
+                data[hdu.data['T3PHIERR']>1e8] = np.nan # we'll deal with that later...
+                if np.sum(np.isnan(data))<data.size:
+                    self._rawData.append(('cp;'+ins,
+                          hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                          self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                          hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
+                          data, hdu.data['T3PHIERR']*np.pi/180))
+                else:
+                    print ' | WARNING: no valid T3PHI values in this HDU'
                 # -- T3
                 data = hdu.data['T3AMP']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('t3;'+arr+'-'+ins,
-                      hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
-                      hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
-                      self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
-                      hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                      data, hdu.data['T3AMPERR']))
+                data[hdu.data['T3AMPERR']>1e8] = np.nan # we'll deal with that later...
+                if np.sum(np.isnan(data))<data.size:
+                    self._rawData.append(('t3;'+ins,
+                          hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                          hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                          self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                          hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
+                          data, hdu.data['T3AMPERR']))
+                else:
+                    print ' | WARNING: no valid T3AMP values in this HDU'
                 Bmax = (hdu.data['U1COORD']**2+hdu.data['V1COORD']**2).max()
                 Bmax = max(Bmax, (hdu.data['U2COORD']**2+hdu.data['V2COORD']**2).max())
                 Bmax = max(Bmax, ((hdu.data['U1COORD']+hdu.data['U2COORD'])**2
@@ -623,13 +635,14 @@ class Open:
                 self.smearFov = min(self.smearFov, self.wavel[ins].min()**2/self.dwavel[ins]/Bmax)
                 self.diffFov = min(self.diffFov, 1.2*self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
 
+
             if hdu.header['EXTNAME']=='OI_VIS2':
                 ins = hdu.header['INSNAME']
                 arr = hdu.header['ARRNAME']
 
                 data = hdu.data['VIS2DATA']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-                self._rawData.append(('v2;'+arr+'-'+ins,
+                self._rawData.append(('v2;'+ins,
                       hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
                       self.wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
@@ -744,8 +757,8 @@ class Open:
         as {'x':mas, 'y':mas, 'f':fratio in %}. 'f' will be forced to be positive.
         """
         if step is None:
-            step = 1/5. * self.minSpatialScale
-            print ' > \033[43mstep= not given, using 1/5 X smallest spatial scale = %4.2f mas\033[0m'%step
+            step = 1/6. * self.minSpatialScale
+            print ' > step= not given, using 1/6 X smallest spatial scale = %4.2f mas'%step
         # --
         if not rmax is None:
             self.rmax = rmax
@@ -755,7 +768,7 @@ class Open:
             print 'ERROR: you should define rmax first!'
             return
         if fratio is None:
-            print ' > \033[43mfratio= not given -> using 0.01 (==1%)\033[0m'
+            print ' > fratio= not given -> using 0.01 (==1%)'
             fratio = 1.0
         print ' > observables:', self.observables
 
@@ -798,9 +811,9 @@ class Open:
         print '... it should take about %d seconds'%(int(est))
         if not CONFIG['longExecWarning'] is None and\
              est>CONFIG['longExecWarning']:
-            print " > \033[41mWARNING: this will take too long. \033[0m"
-            print " | \033[41mIncrease CONFIG['longExecWarning'] if you want to run longer computations.\033[0m"
-            print " | \033[41mset it to 'None' and the warning will disapear... at your own risks!\033[0m"
+            print " > WARNING: this will take too long. "
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+            print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
 
         print ''
@@ -925,7 +938,7 @@ class Open:
         """
         if step is None:
             step = np.sqrt(2) * self.minSpatialScale
-            print ' > \033[43mstep= not given, using sqrt(2) x smallest spatial scale = %4.2f mas\033[0m'%step
+            print ' > step= not given, using sqrt(2) x smallest spatial scale = %4.2f mas'%step
         if not rmax is None:
             self.rmax = rmax
         try:
@@ -979,9 +992,9 @@ class Open:
         print '... it should take about %d seconds'%(int(est))
         if not CONFIG['longExecWarning'] is None and\
              est>CONFIG['longExecWarning']:
-            print " > \033[41mWARNING: this will take too long. \033[0m"
-            print " | \033[41mIncrease CONFIG['longExecWarning'] if you want to run longer computations.\033[0m"
-            print " | \033[41mset it to 'None' and the warning will disapear... at your own risks!\033[0m"
+            print " > WARNING: this will take too long. "
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+            print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
         print ''
         # -- parallel on N-1 cores
@@ -1063,15 +1076,15 @@ class Open:
         self.stepOptFitMap = 2*self.rmax/self.Nopt
         if len(allMin)/float(N*N)>0.6 or\
              2*self.rmax/float(N)*np.sqrt(2)/2 > 1.1*np.median([f['dist'] for f in self.allFits]):
-            print ' | \033[41mWARNING, grid is too wide!!!',
-            print '--> try step=%4.2fmas\033[0m'%(2.*self.rmax/float(self.Nopt))
+            print ' | WARNING, grid is too wide!!!',
+            print '--> try step=%4.2fmas'%(2.*self.rmax/float(self.Nopt))
             reliability = 'unreliable'
         elif N>1.2*self.Nopt:
-            print ' | \033[43mcurrent grid step (%4.2fmas) is too fine!!!'%(2*self.rmax/float(N)),
-            print '--> %4.2fmas should be enough\033[0m'%(2.*self.rmax/float(self.Nopt))
+            print ' | current grid step (%4.2fmas) is too fine!!!'%(2*self.rmax/float(N)),
+            print '--> %4.2fmas should be enough'%(2.*self.rmax/float(self.Nopt))
             reliability = 'overkill'
         else:
-            print ' | \033[42mGrid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas\033[0m'%(step, 2.*self.rmax/float(self.Nopt))
+            print ' | Grid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas'%(step, 2.*self.rmax/float(self.Nopt))
             reliability = 'reliable'
 
         # == plot chi2 min map:
@@ -1226,34 +1239,35 @@ class Open:
             tmp.extend(fitAlso)
             for s in tmp:
                 print ' | %5s='%s, '%9.2e +- %6.2e'%(fit['best'][s], fit['uncer'][s])
-
         return
-    def fitBoot(self, N=None, param=None, fig=2):
+    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap.
+
+        use "fitAlso" to list additional parameters you want to fit,
+        channel spectra width for instance. fitAlso has to be a list!
         """
         if param is None:
             try:
                 param = self.bestFit['best']
-                print ' > inital parameters set to param=', param
             except:
-                print ' > \033[41mERROR: please set param= do the initial conditions (or run fitMap)\033[0m'
-                print " | \033[41mparam={'x':, 'y':, 'f':, 'diam*':}\033[0m"
+                print ' > ERROR: please set param= do the initial conditions (or run fitMap)'
+                print " | param={'x':, 'y':, 'f':, 'diam*':}"
                 return
         try:
             for k in ['x', 'y', 'f', 'diam*']:
                 if not k in param.keys():
-                    print ' > \033[41mERROR: please set param= do the initial conditions (or run fitMap)\033[0m'
-                    print " | \033[41mparam={'x':, 'y':, 'f':, 'diam*':}\033[41m"
+                    print ' > ERROR: please set param= do the initial conditions (or run fitMap)'
+                    print " | param={'x':, 'y':, 'f':, 'diam*':}"
                     return
         except:
             pass
         if N is None:
-            print " > \033[43m'N=' not given, setting it to Ndata / 3\033[0m"
-            N = self.ndata()/3
+            print " > 'N=' not given, setting it to Ndata"
+            N = max(self.ndata(), 100)
 
-        print " > running 'N='%d fit"%N,
+        print " > running N=%d fit"%N,
         self._progTime = [time.time(), time.time()]
         self.allFits, self._prog = [{} for k in range(N)], 0.0
         self.Nfits = N
@@ -1266,7 +1280,7 @@ class Open:
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             params.append((tmp, self._chi2Data, self.observables))
         est = self._estimateRunTime(_fitFunc, params)
-        refFit = _fitFunc(tmp, self._chi2Data, self.observables)
+        refFit = _fitFunc(tmp, self._chi2Data, self.observables, fitAlso)
 
         est *= self.Nfits
         print '... it should take about %d seconds'%(int(est))
@@ -1274,19 +1288,21 @@ class Open:
         self._progTime = [time.time(), time.time()]
         if not CONFIG['longExecWarning'] is None and\
              est>CONFIG['longExecWarning']:
-            print " > \033[41mWARNING: this will take too long. \033[0m"
-            print " | \033[41mIncrease CONFIG['longExecWarning'] if you want to run longer computations.\033[0m"
-            print " | \033[41mset it to 'None' and the warning will disapear... at your own risks!\033[0m"
+            print " > WARNING: this will take too long. "
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+            print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
-        print ''
         p = self._pool()
         fracIgnored = 1/3. # fraction of proba 0 and proba 2.
         for i in range(N):
             tmp = {k:param[k] for k in param.keys()}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
+            if i==0:
+                print ' > inital parameters set to param=', tmp
+                print ''
+
             tmp['_k'] = i
-            # -- TODO: bootstrapping on the dataset
             data = []
             for d in self._chi2Data:
                 data.append(list(d))
@@ -1299,7 +1315,7 @@ class Open:
                 mask[mask==0] += np.nan
                 data[-1][-1] = d[-1]/mask[:,None]
                 # -------------------------------------------------------------------------------
-            p.apply_async(_fitFunc, (tmp, data, self.observables), callback=self._cb_fitFunc)
+            p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso), callback=self._cb_fitFunc)
 
         p.close()
         p.join()
@@ -1309,7 +1325,7 @@ class Open:
             plt.subplots_adjust(left=0.10, bottom=0.07,
                             right=0.98, top=0.90,
                             wspace=0.3, hspace=0.3)
-            title = "CANDID: bootstrapping error bars, %d rounds"%N
+            title = "CANDID: bootstrapping uncertainties, %d rounds"%N
             title += ' using '+', '.join(self.observables)
             title += '\n'+os.path.basename(self.filename)
             plt.suptitle(title, fontsize=14, fontweight='bold')
@@ -1322,9 +1338,12 @@ class Open:
         kz.sort()
         ax = {}
         # -- sigma cliping on the chi2
+        nsigma = 5
+        print ' > sigma clipping in Chi2 for nSigmas= %3.1f'%(nsigma)
         chi2 = np.array([a['chi2'] for a in self.allFits])
-        w = np.where((chi2<=np.median(chi2) + 5*(np.percentile(chi2, 84)-np.median(chi2)))*
-                     (chi2>=np.median(chi2) + 5*(np.percentile(chi2, 16)-np.median(chi2))))
+        w = np.where((chi2<=np.median(chi2) + nsigma*(np.percentile(chi2, 84)-np.median(chi2)))*
+                     (chi2>=np.median(chi2) + nsigma*(np.percentile(chi2, 16)-np.median(chi2))))
+        print ' | %d fits ignored'%(len(chi2)-len(w[0]))
         ax = {}
         for i1,k1 in enumerate(kz):
             for i2,k2 in enumerate(kz):
@@ -1341,7 +1360,9 @@ class Open:
                                                   sharex=ax[(i1,i1)])
                     if i1==0 and i2>0:
                         plt.ylabel(k2)
-                    plt.plot(X, Y, 'ok', alpha=max(0.15, 0.5-0.12*np.log10(N)))
+                    plt.plot(X, Y, '.', color='k', alpha=max(0.15, 0.5-0.12*np.log10(N)))
+                    #plt.hist2d(X, Y, cmap='afmhot_r', bins=max(5, np.sqrt(N)/3.))
+
                     plt.errorbar(refFit['best'][k1], refFit['best'][k2],
                                  xerr=refFit['uncer'][k1], yerr=refFit['uncer'][k2],
                                  color='r', fmt='s', markersize=8, elinewidth=3,
@@ -1357,7 +1378,7 @@ class Open:
                     _x, _y = nSigma*err0*np.cos(th), nSigma*err1*np.sin(th)
                     _x, _y = X.mean() + _x*np.cos(_a+np.pi/2) + _y*np.sin(_a+np.pi/2), \
                              Y.mean() - _x*np.sin(_a+np.pi/2) + _y*np.cos(_a+np.pi/2)
-                    plt.plot(_x, _y, linestyle='-', color='b', linewidth=2)
+                    plt.plot(_x, _y, linestyle='-', color='b', linewidth=3)
 
                     if len(ax[(i1,i2)].get_yticks())>5:
                         ax[(i1,i2)].set_yticks(ax[(i1,i2)].get_yticks()[::2])
@@ -1372,7 +1393,7 @@ class Open:
                     form += '^{+%'+str(int(n+2))+'.'+str(int(n))+'f}'
                     form += '_{-%'+str(int(n+2))+'.'+str(int(n))+'f}$'
                     plt.title(form%(k1, med, errp,errm))
-                    plt.hist(X, color='0.5', bins=max(10, N/30))
+                    plt.hist(X, color='0.5', bins=max(15, N/50))
                     ax[(i1,i2)].set_yticks([])
                     if len(ax[(i1,i2)].get_xticks())>5:
                         ax[(i1,i2)].set_xticks(ax[(i1,i2)].get_xticks()[::2])
@@ -1408,8 +1429,8 @@ class Open:
         'self.f3s'.
         """
         if step is None:
-            step = 1/2. * self.minSpatialScale
-            print ' > \033[43mstep= not given, using 1/2 X smallest spatial scale = %4.2f mas\033[0m'%step
+            step = 1/3. * self.minSpatialScale
+            print ' > step= not given, using 1/3 X smallest spatial scale = %4.2f mas'%step
         if not rmax is None:
             self.rmax = rmax
         try:
@@ -1449,9 +1470,9 @@ class Open:
 
         if not CONFIG['longExecWarning'] is None and\
              est>CONFIG['longExecWarning']:
-            print " > \033[41mWARNING: this will take too long. \033[0m"
-            print " | \033[41mIncrease CONFIG['longExecWarning'] if you want to run longer computations.\033[0m"
-            print " | \033[41mset it to 'None' and the warning will disapear... at your own risks!\033[0m"
+            print " > WARNING: this will take too long. "
+            print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+            print " | set it to 'None' and the warning will disapear... at your own risks!"
             return
 
         #print 'estimated time:', est
@@ -1489,10 +1510,10 @@ class Open:
             self.allf3s[method] = self.f3s.copy()
         #print 'it actually took %4.1f seconds'%(time.time()-t0)
         X, Y = np.meshgrid(allX, allY)
-        vmin=min(np.min(100*self.allf3s['Absil']),
-                            np.min(100*self.allf3s['injection']))
-        vmax=max(np.max(100*self.allf3s['Absil']),
-                            np.max(100*self.allf3s['injection']))
+        vmin=min(np.min(self.allf3s['Absil']),
+                        np.min(self.allf3s['injection']))
+        vmax=max(np.max(self.allf3s['Absil']),
+                            np.max(self.allf3s['injection']))
         if drawMaps:
             # -- draw the detection maps
             vmin, vmax = None, None
@@ -1519,7 +1540,7 @@ class Open:
                                     left=0.08, right=0.97)
             ax1=plt.subplot(221)
             plt.title("Absil's Method")
-            plt.pcolormesh(X, Y, 100*self.allf3s['Absil'], cmap=CONFIG['default cmap'],
+            plt.pcolormesh(X, Y, self.allf3s['Absil'], cmap=CONFIG['default cmap'],
                        vmin=vmin, vmax=vmax)
             plt.colorbar()
             plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
@@ -1530,7 +1551,7 @@ class Open:
 
             ax2=plt.subplot(222)
             plt.title('Companion Injection Method')
-            plt.pcolor(X, Y, 100*self.allf3s['injection'], cmap=CONFIG['default cmap'],
+            plt.pcolor(X, Y, self.allf3s['injection'], cmap=CONFIG['default cmap'],
                        vmin=vmin, vmax=vmax)
             plt.colorbar()
             plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
@@ -1553,10 +1574,10 @@ class Open:
         for k in r_f3s.keys():
             r_f3s[k] = r_f3s[k][(r<self.rmax)*(r>self.rmin)]
         r = r[(r<self.rmax)*(r>self.rmin)]
-        plt.plot(r, 100*sliding_percentile(r, r_f3s['Absil'],
+        plt.plot(r, sliding_percentile(r, r_f3s['Absil'],
                   self.rmax/float(N), 90),
                 '-r', linewidth=3, alpha=0.5, label='Absil 90%')
-        plt.plot(r, 100*sliding_percentile(r, r_f3s['injection'],
+        plt.plot(r, sliding_percentile(r, r_f3s['injection'],
                   self.rmax/float(N), 90),
                 '-b', linewidth=3, alpha=0.5, label='injection 90%')
         plt.legend()
@@ -1565,9 +1586,9 @@ class Open:
         plt.grid()
         # -- store radial profile of detection limit:
         self.f3s = {'r(mas)':r,
-                    'Absil':100*sliding_percentile(r, r_f3s['Absil'],
+                    'Absil':sliding_percentile(r, r_f3s['Absil'],
                                                    self.rmax/float(N), 90),
-                    'Injection':100*sliding_percentile(r, r_f3s['injection'],
+                    'Injection':sliding_percentile(r, r_f3s['injection'],
                                                      self.rmax/float(N), 90),
                   }
         return
