@@ -32,18 +32,28 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 seconds with the 'fast' option (fast indeed, but not accurate!), and almost 6 minutes in normal mode.
 * **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diamaters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
 * **fit Maps**. These are better, but much slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)): this demontrates that, in the case of our example, the secondary "detections" are only artefact from the main companion.
-* **detection limits**. We imlemented 2 methods; Absil's and our companion injection. Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove analyticaly the companion ([FIG5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)).
+* **detection limits**. We imlemented 2 methods; Absil's and our companion injection. Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove analytically the companion ([FIG5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)).
 
-Open OIFITS file with CANDID, and restrict search from 2 to 35 mas. Also, only consider 'v2' and 'cp' observables.
-
-```python
->>> import candid
->>> from matplotlib import pyplot as plt
->>> axcir = candid.Open('AXCir.oifits', rmin=2, rmax=35)
->>> axcir.observables=['v2','cp']
-```
 
 **We strongly recommand you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
+
+Open OIFITS file with CANDID:
+
+```
+>>> import candid
+>>> from matplotlib import pyplot as plt
+>>> axcir = candid.Open('AXCir.oifits')
+ > loading file AXCir.oifits
+ | WARNING: no valid T3AMP values in this HDU
+ | WARNING: no valid T3AMP values in this HDU
+ | Smallest spatial scale:       2.68 mas
+ | Diffraction Field of view:  221.88 mas
+ | WL Smearing Field of view:   55.24 mas
+ | observables available: [ 'v2', 'cp']
+ | instruments: [ 'VLTI-PIONIER_Pnat(1.6135391/1.7698610)']
+ | rmin= not given, set to smallest spatial scale: rmin= 2.68 mas
+ | rmax= not given, set to Field of View: rmax=55.24 mas
+```
 
 ### FIG1 - CHI2MAP: fitted diameter and fixed flux ratio=1%:
 The easiest thing to try is a chi2 map, assuming a certain flux ratio for the companion. This is quite inefficient but CANDID allows to do it. If no parametrization is given (step size 'step=', maximum radius for search 'rmax'), CANDID will guess some values based on the angular resolution and the wavelength smearing field of view. The flux ratio is given in percent.
@@ -132,8 +142,8 @@ On the correlations plots, the red dot with error bars is the fitted position; t
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
 
 
-### FIG5 - DETECTION LIMIT, after analyticaly removing companion:
-We here remove the companion analyticaly (using a high contrast hypothesis) from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
+### FIG5 - DETECTION LIMIT, after analytically removing companion:
+We here remove the companion analytically (using a high contrast hypothesis) from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
 
 ```
 >>> axcir.detectionLimit(fig=5, removeCompanion=p)

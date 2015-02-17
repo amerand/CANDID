@@ -27,7 +27,34 @@ import os
 #__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
 #__version__ = '0.4 | 2015/01/30' # modified bandwidth smearing handling
 #__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
-__version__ = '0.6 | 2015/02/10' # bug fix in smearing
+#__version__ = '0.6 | 2015/02/10' # bug fix in smearing
+__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
+
+
+"""
+# ----------------------
+# -- stanrdard test: ---
+# ----------------------
+import candid
+from matplotlib import pyplot as plt
+axcir = candid.Open('AXCir.oifits')
+
+# -- simple chi2 map
+axcir.chi2Map(fig=1, fratio=1.0)
+
+# -- run a map of fit
+axcir.fitMap(fig=2)
+
+# -- save best fitted companion for later use
+p = axcir.bestFit['best']
+p = {'dwavel;PIONIER_Pnat(1.6135391/1.7698610)': 0.156, 'f': 0.9395, 'y': -28.53, 'x': 6.24, 'diam*': 0.816}
+
+# -- bootstrapping error bars around best companion
+axcir.fitBoot(param=p)
+
+# -- detection limit
+axcir.detectionLimit(fig=5, removeCompanion=p)
+"""
 
 
 print """
@@ -279,17 +306,6 @@ def _injectCompanionData(data, delta, param):
         else:
             dwavel = None
         if d[0].split(';')[0]=='v2':
-            # if dwavel is None:
-            #     phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[3]
-            #     d[-2] = (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
-            # else:
-            #     # -- assumes bandwidthSmearing is a spectral Resolution:
-            #     tmp = 0.0
-            #     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*dwavel:
-            #         phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[3]+x)
-            #         tmp += (d[-2] + 2*param['f']*np.sqrt(np.abs(d[-2]))*np.cos(phi) + param['f']**2)/(1+param['f'])**2
-            #     d[-2] = tmp/float(CONFIG['n_smear'])
-
             phi = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[3]
             if not dwavel is None:
                 x = phi*dwavel/d[3]/2.
@@ -302,36 +318,6 @@ def _injectCompanionData(data, delta, param):
                      f**2*(param['f']/100.)**2)/(1+param['f']/100.)**2
 
         if d[0].split(';')[0]=='cp' or d[0].split(';')[0]=='t3':
-            # if dwavel is None:
-            #     phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
-            #     phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
-            #     phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/d[5]
-            #     # -- Antoine's original:
-            #     # d[-2] -= param['f']*(np.sin(phi0)/delta[i][0]+
-            #     #                      np.sin(phi1)/delta[i][1]-
-            #     #                      np.sin(phi2)/delta[i][2])
-            #     # -- from Alex:
-            #     tmp = 1 + param['f']*( np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0] )
-            #     d[-2] -= np.angle(tmp)
-            # else:
-            #     # -- assumes bandwidthSmearing is a spectral Resolution:
-            #     tmp = 0.0 + 0.0j
-            #     for x in np.linspace(-0.5, 0.5, CONFIG['n_smear'])*dwavel:
-            #         phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/(d[5]+x)
-            #         phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/(d[5]+x)
-            #         phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/(d[5]+x)
-            #         # -- Antoine's:
-            #         # tmp += param['f']*(np.sin(phi0)/delta[i][0]+
-            #         #                    np.sin(phi1)/delta[i][1]-
-            #         #                    np.sin(phi2)/delta[i][2])
-            #         # -- Alex:
-            #         tmp += 1 + param['f']*(np.exp(-1j*phi2)/delta[i][2] + np.exp(1j*phi1)/delta[i][1] + np.exp(1j*phi0)/delta[i][0])
-
-            #     # -- Antoine's:
-            #     #d[-2] -= tmp/float(CONFIG['n_smear'])
-            #     # -- Alex's:
-            #     d[-2] -= np.angle(tmp/float(CONFIG['n_smear']))
-
             phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
             phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
             phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/d[5]
@@ -347,9 +333,9 @@ def _injectCompanionData(data, delta, param):
                 f2 = np.abs(np.sin(x)/x)
             else:
                 f0,f1,f2 = 1., 1., 1.
-            tmp = 1 + param['f']/100.*( f0*np.exp(-1j*phi2)/delta[i][2] +
-                                  f1*np.exp(1j*phi1)/delta[i][1] +
-                                  f2*np.exp(1j*phi0)/delta[i][0] )
+            tmp = 1 + param['f']/100.*( f2*np.exp(-1j*phi2)/delta[i][2] +
+                                        f1*np.exp(1j*phi1)/delta[i][1] +
+                                        f0*np.exp(1j*phi0)/delta[i][0] )
             if d[0].split(';')[0]=='cp':
                 d[-2] -= np.angle(tmp)
             else:
@@ -527,7 +513,6 @@ class Open:
             tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
-            print tmp
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
 
             print ' > UD Fit'
@@ -1223,7 +1208,7 @@ class Open:
             ax1.plot(self._dataheader['X'], self._dataheader['Y'], 'py', markersize=12, alpha=0.3)
 
         # -- do an additional fit by fitting also the bandwidth smearing
-        if False:
+        if True:
             param = self.bestFit['best']
             fitAlso = filter(lambda x: x.startswith('dwavel'), param)
             print ' > fixed bandwidth parameters for the map (in um):'
