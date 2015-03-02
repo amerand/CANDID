@@ -29,7 +29,7 @@ import os
 #__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
 #__version__ = '0.6 | 2015/02/10' # bug fix in smearing
 #__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
-__version__ = '0.8 | 2015/02/19' # can load directories instead of single files
+__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
 
 
 
@@ -72,6 +72,7 @@ CONFIG = {#'n_smear': 3, # number of channels for bandwidth smearing -> OBSOLETE
           'chi2 scale': 'lin', # can be log
           'longExecWarning': 180, # in seconds
           'suptitle':True, # display over head title
+          'progress bar': True,
           }
 
 # -- units of the parameters
@@ -170,11 +171,12 @@ def _Vbin(uv, param):
     'x, y': in mas
     'f': flux ratio in % -> takes the absolute value
     """
-    if 'f' in param:
+    if 'f' in param.keys():
         f = np.abs(param['f'])/100.
     else:
         f = param['f']/100.
     f = min(f, 1.0) #
+
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
     Vstar = _Vud(B, param['diam*'], param['wavel'])
@@ -195,6 +197,7 @@ def _Vbin(uv, param):
         c = 1.0
     res = (Vstar + c*f*Vcomp)/(1.0+f)
     return res
+
 
 def _modelObservables(obs, param):
     """
@@ -248,6 +251,19 @@ def _modelObservables(obs, param):
                     res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
                 tmp['wavel'] = wl0
                 res[i] /= float(CONFIG['n_smear'])
+        elif o[0].split(';')[0].startswith('v2_'):
+            p = int(o[0].split(';')[0].split('_')[1])
+            n = int(o[0].split(';')[0].split('_')[2])
+            # -- wl range based on min, mean, max
+            _wl = np.linspace(o[-4][0], o[-4][2], 2*n+2)
+            # -- remove pix width
+            tmp.pop('dwavel')
+            _v2 = []
+            for _l in _wl:
+                tmp['wavel']=_l
+                _v2.append(np.abs(_Vbin([o[1], o[2]], tmp))**2)
+            _v2 = np.array(_v2)
+            res[i] = np.array([np.polyfit(_wl-o[-4][1], _v2[:,j], n)[n-p] for j in range(_v2.shape[1])])
 
         elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3':
             tmp['wavel'] = o[5]
@@ -369,7 +385,9 @@ def _generateFitData(chi2Data, observables):
             _errs = np.append(_errs, c[-1].flatten())
             if c[0].split(';')[0] == 'v2':
                 _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3].flatten())
-            else:
+            elif c[0].split(';')[0].startswith('v2_'):
+                _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3][1])
+            elif c[0].split(';')[0] == 't3' or c[0].split(';')[0] == 'cp':
                 _uv = np.append(_uv, np.maximum(np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[5].flatten(),
                                                 np.sqrt(c[3].flatten()**2+c[4].flatten()**2)/c[5].flatten(),
                                                 np.sqrt((c[1]+c[3]).flatten()**2+(c[3]+c[4]).flatten()**2)/c[5].flatten()))
@@ -489,7 +507,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-    def __init__(self, filename, rmin=None, rmax=None, Ncores=None):
+    def __init__(self, filename, rmin=None, rmax=None, Ncores=None, reducePoly=None):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
@@ -503,18 +521,29 @@ class Open:
             files = os.listdir(filename)
             files = filter(lambda x: ('.fit' in x.lower()) or ('.oifits' in x.lower()), files)
             self._initOiData()
-            for f in files:
-                print ' | file:', f
+            for i,f in enumerate(files):
+                print ' > file %d/%d: %s'%(i+1, len(files), f)
                 try:
-                    self._loadOifitsData(os.path.join(filename, f))
+                    self._loadOifitsData(os.path.join(filename, f, reducePoly=reducePoly))
                 except:
                     print '   -> ERROR! could not read', os.path.join(filename, f)
-            self.filename = os.path.join(filename, 'OIDATA')
+            self.filename = filename
+            self.titleFilename = filename
         else:
             print ' > loading file', filename
             self.filename = filename
+            self.titleFilename = os.path.basename(filename)
+
             self._initOiData()
-            self._loadOifitsData(filename)
+            self._loadOifitsData(filename, reducePoly=reducePoly)
+        print ' > compute aux data for companion injection'
+        self._compute_delta()
+        #self.estimateCorrSpecChannels()
+        # -- all MJDs in the files:
+        mjds = []
+        for d in self._rawData:
+            mjds.extend(list(set(d[-3].flatten())))
+        self.allMJD = np.array(list(set(mjds)))
 
         self.observables = list(set([c[0].split(';')[0] for c in self._rawData]))
         self.instruments = list(set([c[0].split(';')[1] for c in self._rawData]))
@@ -584,9 +613,10 @@ class Open:
             self.chi2_UD = 1.0
         return
     def _initOiData(self):
-        self.wavel = {}
+        self.wavel = {} # wave tables for each instrumental setup
         self.dwavel = {} # -- average width of the spectral channels
-        self.all_dwavel = {} # -- width of all the spectral channels
+        self.all_dwavel = {} # -- width of all the spectral channels (same shape as wavel)
+        self.wavel_3m = {} # -- min, mean, max
         self.telArray = {}
         self._rawData, self._delta = [], []
         self.smearFov = 1e3 # bandwidth smearing FoV, in mas
@@ -594,9 +624,11 @@ class Open:
         self.minSpatialScale = 1e3
         self._delta = []
         return
-    def _loadOifitsData(self, filename):
+    def _loadOifitsData(self, filename, reducePoly=None):
         """
         Note that CP are stored in radians, not degrees like in the OIFITS!
+
+        reducePoly: reduce data by poly fit of order "reducePoly" on as a function wavelength
         """
         self._fitsHandler = fits.open(filename)
         self._dataheader={}
@@ -611,6 +643,9 @@ class Open:
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH':
                 self.wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
+                self.wavel_3m[hdu.header['INSNAME']] = (self.wavel[hdu.header['INSNAME']].min(),
+                                                        self.wavel[hdu.header['INSNAME']].mean(),
+                                                        self.wavel[hdu.header['INSNAME']].max())
                 self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
                 self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
                 self.dwavel[hdu.header['INSNAME']]=np.mean(self.all_dwavel[hdu.header['INSNAME']])
@@ -633,12 +668,14 @@ class Open:
         amberWLmin, amberWLmax = 1.5, 2.4 # -- H+K
         #amberWLmin, amberWLmax = 1.0, 2.4 # -- J+H+K
 
-
         amberAtmBand = [1.0, 1.35, 1.87]
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME'] in ['OI_T3', 'OI_VIS2']:
                 ins = hdu.header['INSNAME']
                 arr = hdu.header['ARRNAME']
+                if 'AMBER' in ins:
+                    print ' | Warning - AMBER: rejecting WL<%3.1fum'%amberWLmin
+                    print ' | Warning - AMBER: rejecting WL>%3.1fum'%amberWLmax
 
             if hdu.header['EXTNAME']=='OI_T3':
                 # -- CP
@@ -646,15 +683,13 @@ class Open:
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 data[hdu.data['T3PHIERR']>1e8] = np.nan # we'll deal with that later...
                 if 'AMBER' in ins:
-                    print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin
-                    print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax
+                    # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin
+                    # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
-                    print wl.min(), wl.max()
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
                     for b in amberAtmBand:
-                        data[np.abs(wl-b)<0.07] = np.nan
-
+                        data[np.abs(wl-b)<0.1] = np.nan
 
                 if np.sum(np.isnan(data))<data.size:
                     self._rawData.append(('cp;'+ins,
@@ -672,14 +707,14 @@ class Open:
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 data[hdu.data['T3AMPERR']>1e8] = np.nan # we'll deal with that later...
                 if 'AMBER' in ins:
-                    print ' | !!AMBER: rejecting T3 WL<%3.1fum'%amberWLmin
-                    print ' | !!AMBER: rejecting T3 WL>%3.1fum'%amberWLmax
+                    # print ' | !!AMBER: rejecting T3 WL<%3.1fum'%amberWLmin
+                    # print ' | !!AMBER: rejecting T3 WL>%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
 
                     for b in amberAtmBand:
-                        data[np.abs(wl-b)<0.07] = np.nan
+                        data[np.abs(wl-b)<0.1] = np.nan
 
                 if np.sum(np.isnan(data))<data.size:
                     self._rawData.append(('t3;'+ins,
@@ -704,24 +739,44 @@ class Open:
                 data = hdu.data['VIS2DATA']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 if 'AMBER' in ins:
-                    print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
-                    print ' | !!AMBER: rejecting V2 WL>%3.1fum'%amberWLmax
+                    # print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
+                    # print ' | !!AMBER: rejecting V2 WL>%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
-
-                    print ' | !!AMBER: rejecting bad V2'
+                    print ' | !!AMBER: rejecting bad V2',
                     data[data<-3*hdu.data['VIS2ERR']] = np.nan
+                    print np.sum(hdu.data['VIS2ERR']>np.abs(data))
                     data[hdu.data['VIS2ERR']>0.5*np.abs(data)] = np.nan
                     for b in amberAtmBand:
-                        data[np.abs(wl-b)<0.07] = np.nan
-
+                        data[np.abs(wl-b)<0.1] = np.nan
+                if not reducePoly is None:
+                    p = []
+                    ep = []
+                    for i in range(len(data)):
+                        if all(np.isnan(data[i])) or all(np.isnan(hdu.data['VIS2ERR'][i])):
+                            tmp = {'A'+str(j):np.nan for j in range(reducePoly+1)},\
+                                {'A'+str(j):np.nan for j in range(reducePoly+1)}
+                        else:
+                            tmp = _decomposeObs(self.wavel[ins], data[i], hdu.data['VIS2ERR'][i], reducePoly)
+                        p.append(tmp[0])
+                        ep.append(tmp[1])
+                    # -- each order:
+                    for j in range(reducePoly+1):
+                        self._rawData.append(('v2_%d_%d;'%(j,reducePoly)+ins,
+                          hdu.data['UCOORD'],
+                          hdu.data['VCOORD'],
+                          self.wavel_3m[ins],
+                          hdu.data['MJD'],
+                          np.array([x['A'+str(j)] for x in p]),
+                          np.array([x['A'+str(j)] for x in ep])))
                 self._rawData.append(('v2;'+ins,
                       hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
                       self.wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
                       hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
                       data, hdu.data['VIS2ERR']))
+
                 Bmax = (hdu.data['UCOORD']**2+hdu.data['VCOORD']**2).max()
                 Bmax = np.sqrt(Bmax)
                 maxRes = max(maxRes, Bmax/self.wavel[ins].min())
@@ -732,7 +787,9 @@ class Open:
         print ' | Smallest spatial scale:    %7.2f mas'%(self.minSpatialScale)
         print ' | Diffraction Field of view: %7.2f mas'%(self.diffFov)
         print ' | WL Smearing Field of view: %7.2f mas'%(self.smearFov)
-
+        self._fitsHandler.close()
+        return
+    def _compute_delta(self):
         # -- compute a flatten version of all V2:
         allV2 = {'u':np.array([]), 'v':np.array([]), 'mjd':np.array([]),
                  'wl':np.array([]), 'v2':np.array([])}
@@ -773,16 +830,34 @@ class Open:
                 self._delta.append((vis1, vis2, vis3))
             if r[0].split(';')[0] == 'v2':
                 self._delta.append(None)
-        self._fitsHandler.close()
         return
+    def estimateCorrSpecChannels(self):
+        """
+        estimate correlation between spectral channels
+        """
+        self.corrSC = []
+        for d in self._rawData:
+            tmp = []
+            #print d[0], d[-1].shape
+            for k in range(d[-1].shape[0]):
+                n = min(d[-1].shape[1]-2, 2)
+                #print ' > ', k, 'Sys / Err =',
+                model = _dpfit_leastsqFit(_dpfit_polyN, d[-4][k],
+                                          {'A'+str(i):0.0 for i in range(n)},
+                                          d[-2][k], d[-1][k])['model']
+                tmp.append( _estimateCorrelation(d[-2][k], d[-1][k], model)**2/np.mean(d[-1][k]**2))
+            self.corrSC.append(tmp)
+        return
+
     def ndata(self):
         tmp = 0
         nan = 0
-        for c in self._chi2Data:
+        for i, c in enumerate(self._chi2Data):
             if c[0].split(';')[0] in self.observables:
                 tmp += len(c[-1].flatten())
                 nan += np.sum(1-(1-np.isnan(c[-1]))*(1-np.isnan(c[-2])))
-        return tmp-nan
+        return int(tmp-nan)
+
     def close(self):
         self._fitsHandler.close()
         return
@@ -807,7 +882,7 @@ class Open:
             self.mapChi2[r[1], r[0]] = r[2]
             # -- completed / to be computed
             f = np.sum(self.mapChi2>0)/float(np.sum(self.mapChi2>=0))
-            if f>self._prog:
+            if f>self._prog and CONFIG['progress bar']:
                 n = int(50*f)
                 print '\033[F',
                 print '|'+'='*(n+1)+' '*(50-n)+'|',
@@ -923,9 +998,11 @@ class Open:
         s0 = _nSigmas(self.chi2_UD,
                        np.minimum(np.min(self.mapChi2), self.chi2_UD),
                        self.ndata())
-        print ' | chi2 Min: %5.2f'%(np.min(self.mapChi2))
+        print ' | chi2 Min: %5.3f'%(np.min(self.mapChi2))
         print ' | at X,Y  : %6.2f, %6.2f mas'%(x0, y0)
-        print ' | Nsigma  : %5.2f'%s0
+        #print ' | Nsigma  : %5.2f'%s0
+        print ' | NDOF=%d'%( self.ndata()-1),
+        print ' > n sigma detection: %5.2f (fully uncorrelated errors)'%s0
 
         plt.close(fig)
         if CONFIG['suptitle']:
@@ -938,7 +1015,7 @@ class Open:
             else:
                 title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
             title += ' Using '+', '.join(self.observables)
-            title += '\n'+os.path.basename(self.filename)
+            title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
             plt.figure(fig, figsize=(12,5.4))
@@ -946,14 +1023,19 @@ class Open:
                                 left=0.08, right=0.99, wspace=0.10)
 
         ax1 = plt.subplot(121)
-        tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$='
+        if CONFIG['chi2 scale']=='log':
+            tit = 'log10[$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$] with $\chi^2_\mathrm{UD}$='
+            plt.pcolormesh(X, Y, np.log10(self.mapChi2/self.chi2_UD), cmap=CONFIG['default cmap'])
+        else:
+            tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$='
+            plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=CONFIG['default cmap'])
         if self.chi2_UD>0.05:
             tit += '%4.2f'%(self.chi2_UD)
         else:
             tit += '%4.2e'%(self.chi2_UD)
 
         plt.title(tit)
-        plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=CONFIG['default cmap'])
+
         plt.colorbar(format='%0.2f')
         plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
@@ -987,7 +1069,7 @@ class Open:
         if '_k' in r.keys():
             self.allFits[r['_k']] = r
             f = np.sum([0 if a=={} else 1 for a in self.allFits])/float(self.Nfits)
-            if f>self._prog:
+            if f>self._prog and CONFIG['progress bar']:
                 n = int(50*f)
                 print '\033[F',
                 print '|'+'='*(n+1)+' '*(50-n)+'|',
@@ -1000,7 +1082,7 @@ class Open:
         # except:
         #     print '!!! I expect a dict!'
         return
-    def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None, removeCompanion=None, rmin=None,rmax=None, fratio=2.0, diam=None, diamc=None):
+    def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None, removeCompanion=None, rmin=None,rmax=None, fratio=2.0, diam=None, diamc=None, doNotFit=None):
         """
         - filename: a standard OIFITS data file
         - observables = ['cp', 'v2', 't3'] list of observables to take into account in the file. Default is all
@@ -1088,18 +1170,20 @@ class Open:
                         'f':fratio, 'x':x, 'y':y, '_k':k}
                     for _k in self.dwavel.keys():
                         tmp['dwavel;'+_k] = self.dwavel[_k]
-                    doNotFit=[]
-                    if not diam is None:
-                        doNotFit.append('diam*')
-                    if not diamc is None:
-                        doNotFit.append('diamc')
-                        tmp['diamc'] = diamc
+                    _doNotFit=[]
+                    # if not diam is None:
+                    #     _doNotFit.append('diam*')
+                    # if not diamc is None:
+                    #     _doNotFit.append('diamc')
+                    #     tmp['diamc'] = diamc
+                    if not doNotFit is None:
+                        _doNotFit.extend(doNotFit)
                     params.append(tmp)
                     # -- multiple threads:
-                    p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables, None, doNotFit),
+                    p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables, None, _doNotFit),
                                  callback=self._cb_fitFunc)
                     # -- single thread:
-                    #self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data, self.observables, None, doNotFit))
+                    #self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data, self.observables, None, _doNotFit))
                     k += 1
         p.close()
         p.join()
@@ -1204,7 +1288,7 @@ class Open:
 
         title = "CANDID: companion search"
         title += ' using '+', '.join(self.observables)
-        title += '\n'+os.path.basename(self.filename)
+        title += '\n'+self.titleFilename
         if not removeCompanion is None:
             title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
                     removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
@@ -1285,7 +1369,8 @@ class Open:
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print ' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD, allMin2[i]['chi2'], self.ndata()-1),
-            print '-> n sigma: %5.2f'%allMin2[i]['nsigma']
+            print '-> n sigma: %5.2f (assumes uncorr data)'%allMin2[i]['nsigma']
+
             x0 = allMin2[i]['best']['x']
             ex0 = allMin2[i]['uncer']['x']
             y0 = allMin2[i]['best']['y']
@@ -1338,13 +1423,19 @@ class Open:
             for s in tmp:
                 print ' | %5s='%s, '%8.4f +- %6.4f %s'%(fit['best'][s], fit['uncer'][s], paramUnits(s))
         return
-    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None):
+    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True, monteCarlo=False, corrSpecCha=None):
         """
         boot strap fitting around a single position. By default,
-        the position is the best position found by fitMap.
+        the position is the best position found by fitMap. It can also been entered
+        as "param=" using a dictionnary
 
         use "fitAlso" to list additional parameters you want to fit,
         channel spectra width for instance. fitAlso has to be a list!
+
+        - useMJD bootstraps on the dates, in addition to the spectrla channels. This is enabled by default.
+
+        - monteCarlo: uses a monte Carlo approches, rather than a statistical resampling:
+            all data are considered but with random errors added. An additional dict can be added to describe
         """
         if param is None:
             try:
@@ -1379,7 +1470,6 @@ class Open:
                     tmp['dwavel;'+_k] = self.dwavel[_k]
                 params.append((tmp, self._chi2Data, self.observables))
             est = self._estimateRunTime(_fitFunc, params)
-            refFit = _fitFunc(tmp, self._chi2Data, self.observables, fitAlso)
             est *= self.Nfits
             print '... it should take about %d seconds'%(int(est))
             self.allFits, self._prog = [{} for k in range(N)], 0.0
@@ -1390,9 +1480,27 @@ class Open:
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
+        else:
+            print ''
+        tmp = {k:param[k] for k in param.keys()}
+        for _k in self.dwavel.keys():
+            tmp['dwavel;'+_k] = self.dwavel[_k]
+        refFit = _fitFunc(tmp, self._chi2Data, self.observables, fitAlso, doNotFit)
 
+        res = {'fit':refFit}
+        res['MJD'] = self.allMJD.mean()
         p = self._pool()
-        fracIgnored = 1/3. # fraction of proba 0 and proba 2.
+
+        mjds = []
+        for d in self._chi2Data:
+            mjds.extend(list(set(d[-3].flatten())))
+        mjds = set(mjds)
+        if len(mjds)<3 and useMJD:
+            print ' | Warning: not enough dates to bootstrap on them!'
+            useMJD=False
+        if useMJD:
+            x = {j:np.random.rand() for j in mjds}
+
         for i in range(N):
             tmp = {k:param[k] for k in param.keys()}
             for _k in self.dwavel.keys():
@@ -1405,16 +1513,34 @@ class Open:
             data = []
             for d in self._chi2Data:
                 data.append(list(d))
-                # -- Monte Carlo noise ----------------------------------------------------------
-                # data[-1][-2] = d[-2] + 1.0*d[-1] * np.random.randn(d[-1].shape[0], d[-1].shape[1])
-                # -- Bootstrapping: set 'fracIgnored'% of the data to Nan (ignored)
-                mask = np.random.rand(data[-1][-1].shape[0])
-                mask = np.float_(mask>=fracIgnored) # ignored some points
-                mask[mask==1] *= 1 + (np.random.rand(int(np.sum(mask)))<=fracIgnored) # points seen twice
-                mask[mask==0] += np.nan
-                data[-1][-1] = d[-1]/mask[:,None]
-                # -------------------------------------------------------------------------------
-            p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso), callback=self._cb_fitFunc)
+                if monteCarlo:
+                    # -- Monte Carlo noise ----------------------------------------------------------
+                    if corrSpecCha is None:
+                        data[-1][-2] = d[-2] + 1.0*d[-1] * np.random.randn(d[-1].shape[0], d[-1].shape[1])
+                    else:
+                        print 'error! >> not implemented'
+                        return
+                else:
+                    # -- Bootstrapping: set 'fracIgnored'% of the data to Nan (ignored)
+                    if useMJD:
+                        mjd = set(d[-3].flatten())
+                        mask = d[-1]*0 + 1
+                        for j in mjd:
+                            if x[j]<=1./len(mjds) :
+                                mask[d[-3]==j] = np.nan # ignored
+                        # -- weight the error bars
+                        data[-1][-1] = data[-1][-1]/mask
+                    fracIgnored = 1/3. # fraction of proba 0 and proba 2. DO NOT CHANGE!!!
+                    mask = np.random.rand(d[-1].shape[1])
+                    mask = np.float_(mask>=fracIgnored) # ignored some points
+                    mask[mask==1] *= 1 + (np.random.rand(int(np.sum(mask)))<=fracIgnored) # points seen twice
+                    mask[mask==0] += np.nan
+                    # -- weight the error bars
+                    data[-1][-1] = data[-1][-1]/mask[None,:]
+            # -- multi thread:
+            p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso, doNotFit), callback=self._cb_fitFunc)
+            # -- single thread:
+            #self._cb_fitFunc(_fitFunc(tmp, data, self.observables, fitAlso, doNotFit))
 
         p.close()
         p.join()
@@ -1426,7 +1552,7 @@ class Open:
                             wspace=0.3, hspace=0.3)
             title = "CANDID: bootstrapping uncertainties, %d rounds"%N
             title += ' using '+', '.join(self.observables)
-            title += '\n'+os.path.basename(self.filename)
+            title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
             plt.figure(fig, figsize=(10,10))
@@ -1438,12 +1564,25 @@ class Open:
         ax = {}
         # -- sigma cliping on the chi2
         nsigma = 5
-        print ' > sigma clipping in Chi2 for nSigmas= %3.1f'%(nsigma)
-        chi2 = np.array([a['chi2'] for a in self.allFits])
-        w = np.where((chi2<=np.median(chi2) + nsigma*(np.percentile(chi2, 84)-np.median(chi2)))*
-                     (chi2>=np.median(chi2) + nsigma*(np.percentile(chi2, 16)-np.median(chi2))))
-        print ' | %d fits ignored'%(len(chi2)-len(w[0]))
+        # print ' > sigma clipping in Chi2 for nSigmas= %3.1f'%(nsigma)
+        # chi2 = np.array([a['chi2'] for a in self.allFits])
+        # w = np.where((chi2<=np.median(chi2) + nsigma*(np.percentile(chi2, 84)-np.median(chi2)))*
+        #              (chi2>=np.median(chi2) + nsigma*(np.percentile(chi2, 16)-np.median(chi2))))
+        # print ' | %d fits ignored'%(len(chi2)-len(w[0]))
+
+        print ' > sigma clipping in position for nSigmas= %3.1f'%(nsigma)
+        x = np.array([a['best']['x'] for a in self.allFits])
+        y = np.array([a['best']['y'] for a in self.allFits])
+
+        w = np.where((x<=np.median(x) + nsigma*(np.percentile(x, 84)-np.median(x)))*
+                     (x>=np.median(x) + nsigma*(np.percentile(x, 16)-np.median(x)))*
+                     (y<=np.median(y) + nsigma*(np.percentile(y, 84)-np.median(y)))*
+                     (y>=np.median(y) + nsigma*(np.percentile(y, 16)-np.median(y))))
+        print ' | %d fits ignored'%(len(x)-len(w[0]))
+
+
         ax = {}
+        res['boot']={}
         for i1,k1 in enumerate(kz):
             for i2,k2 in enumerate(kz):
                 X = np.array([a['best'][k1] for a in self.allFits])[w]
@@ -1477,8 +1616,9 @@ class Open:
                     _x, _y = nSigma*err0*np.cos(th), nSigma*err1*np.sin(th)
                     _x, _y = X.mean() + _x*np.cos(_a+np.pi/2) + _y*np.sin(_a+np.pi/2), \
                              Y.mean() - _x*np.sin(_a+np.pi/2) + _y*np.cos(_a+np.pi/2)
+                    # error ellipse
                     plt.plot(_x, _y, linestyle='-', color='b', linewidth=3)
-
+                    res['boot'][k1+k2] = (_x, _y)
                     if len(ax[(i1,i2)].get_yticks())>5:
                         ax[(i1,i2)].set_yticks(ax[(i1,i2)].get_yticks()[::2])
 
@@ -1487,7 +1627,17 @@ class Open:
                     med = np.median(X)
                     errp = np.median(X)-np.percentile(X, 16)
                     errm = np.percentile(X, 84)-np.median(X)
-                    n = int(max(2-np.log10(errp), 2-np.log10(errm)))
+                    try:
+                        n = int(max(2-np.log10(errp), 2-np.log10(errm)))
+                    except:
+                        print ' | to feew data points? using mean instead of median'
+                        print X
+                        med = np.mean(X)
+                        errp = np.std(X)
+                        errm = np.std(X)
+                        print med, errp, errm
+                        n = int(2-np.log10(errm))
+
                     form = '%s = $%'+str(int(n+2))+'.'+str(int(n))+'f'
                     form += '^{+%'+str(int(n+2))+'.'+str(int(n))+'f}'
                     form += '_{-%'+str(int(n+2))+'.'+str(int(n))+'f}$'
@@ -1496,10 +1646,11 @@ class Open:
                     ax[(i1,i2)].set_yticks([])
                     if len(ax[(i1,i2)].get_xticks())>5:
                         ax[(i1,i2)].set_xticks(ax[(i1,i2)].get_xticks()[::2])
-
+                    print ' | %8s = %8.4f + %6.4f - %6.4f %s'%(k1, med, errp,errm, paramUnits(k1))
+                    res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
-        return
+        return res
     def plotModel(self, param=None, fig=3):
         """
         param: what companion model to plot. If None, will attempt to use self.bestFit
@@ -1541,7 +1692,6 @@ class Open:
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
         print _meas.shape, _mod.shape
-
     def _cb_nsigmaFunc(self, r):
         """
         callback function for detectionLimit()
@@ -1550,7 +1700,7 @@ class Open:
             self.f3s[r[1], r[0]] = r[2]
             # -- completed / to be computed
             f = np.sum(self.f3s>0)/float(np.sum(self.f3s>=0))
-            if f>self._prog:
+            if f>self._prog and CONFIG['progress bar']:
                 n = int(50*f)
                 print '\033[F',
                 print '|'+'='*(n+1)+' '*(50-n)+'|',
@@ -1644,8 +1794,8 @@ class Open:
                         p.apply_async(_detectLimit, (params, self._chi2Data, self.observables,
                                        self._delta, method), callback=self._cb_nsigmaFunc)
                         # -- single thread:
-                        # self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data, self.observables,
-                        #                 self._delta, method))
+                        #self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data, self.observables,
+                        #                self._delta, method))
             p.close(); p.join()
             # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
@@ -1670,7 +1820,7 @@ class Open:
                 else:
                     title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
                 title += ' Using '+', '.join(self.observables)
-                title += '\n'+os.path.basename(self.filename)
+                title += '\n'+self.titleFilename
                 if not removeCompanion is None:
                     title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
                             removeCompanion['x'], removeCompanion['y'], removeCompanion['f'])
@@ -2001,6 +2151,91 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
             except:
                 print ''
     return res
+
+def _dpfit_ramdomParam(fit, N=1):
+    """
+    get a set of randomized parameters (list of dictionnaries) around the best fited value, using a gaussian probability, taking into account the correlations from the covariance matrix.
+
+    fit is the result of leastsqFit (dictionnary)
+    """
+    m = np.array([fit['best'][k] for k in fit['fitOnly']])
+    res = []
+    for k in range(N):
+        p = dict(zip(fit['fitOnly'],np.random.multivariate_normal(m, fit['cov'])))
+        p.update({fit['best'][k] for k in fit['best'].keys() if not k in
+                 fit['fitOnly']})
+        res.append(p)
+    if N==1:
+        return res[0]
+    else:
+        return res
+
+def _dpfit_polyN(x, params):
+    """
+    Polynomial function. e.g. params={'A0':1.0, 'A2':2.0} returns
+    x->1+2*x**2. The coefficients do not have to start at 0 and do not
+    need to be continuous. Actually, the way the function is written,
+    it will accept any '_x' where '_' is any character and x is a float.
+    """
+    res = 0
+    for k in params.keys():
+        res += params[k]*np.array(x)**float(k[1:])
+    return res
+
+def _decomposeObs(wl, data, err, order=1, plot=False):
+    """
+    decompose data(wl)+-err as a polynomial of order "order" in (wl-wl.mean())
+    """
+    X = wl-wl.mean()
+    fit = _dpfit_leastsqFit(_dpfit_polyN, X, {'A'+str(i):0.0 for i in range(order+1)}, data, err)
+    # -- estimate statistical errors, as scatter around model:
+    stat = np.nanstd(data - fit['model'])
+    # -- estimate median systematic error:
+    sys = np.nanmedian(np.sqrt(np.maximum(err**2-stat**2, 0.0)))
+    tmp = np.sqrt(fit['uncer']['A0']**2 + sys**2)/fit['uncer']['A0']
+    fit['uncer']['A0'] = np.sqrt(fit['uncer']['A0']**2 + sys**2)
+
+    if plot:
+        plt.clf()
+        plt.errorbar(X, data, yerr=err, fmt='o', color='k', alpha=0.2)
+        plt.plot(X, fit['model'], '-r', linewidth=2, alpha=0.5)
+        plt.plot(X, fit['model']+sys, '-r', linewidth=2, alpha=0.5, linestyle='dashed')
+        plt.plot(X, fit['model']-sys, '-r', linewidth=2, alpha=0.5, linestyle='dashed')
+
+        ps = _dpfit_ramdomParam(fit, 100)
+        _x = np.linspace(X.min(), X.max(), 10*len(X))
+        _ymin, _ymax = _dpfit_polyN(_x, fit['best']), _dpfit_polyN(_x, fit['best'])
+        for p in ps:
+            tmp = _dpfit_polyN(_x, p)
+            _ymin = np.minimum(_ymin, tmp)
+            _ymax = np.maximum(_ymax, tmp)
+        plt.fill_between(_x, _ymin, _ymax, color='r', alpha=0.5)
+    else:
+        return fit['best'], fit['uncer']
+
+
+def _estimateCorrelation(data, errors, model):
+    """
+    assumes errors**2 = stat**2 + sys**2, will compute sys so the chi2 from stat error bars is 1.
+    """
+    sys = np.min(errors)/2.
+    fact = 0.8
+    chi2 = np.mean((data-model)**2/(errors**2-sys**2))
+    tol = 1.e-3
+    if chi2 <= 1:
+        return 0.0
+
+    while np.abs(chi2-1)>tol and sys/np.min(errors)>tol:
+        #print sys, chi2
+        if chi2>1:
+            sys *= fact
+        elif chi2<1:
+            sys /= fact
+        _chi2 = np.mean((data-model)**2/(errors**2-sys**2))
+        if (chi2-1)*(_chi2-1)<0:
+            fact = np.sqrt(fact)
+        chi2 = _chi2
+    return sys
 
 class pca():
     """
