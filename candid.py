@@ -29,7 +29,8 @@ import os
 #__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
 #__version__ = '0.6 | 2015/02/10' # bug fix in smearing
 #__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
-__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
+#__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
+__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
 
 
 
@@ -38,7 +39,6 @@ __version__ = '0.8 | 2015/02/19' # can load directories instead of single files,
 # -- standard test: --
 # --------------------
 import candid
-from matplotlib import pyplot as plt
 axcir = candid.Open('AXCir.oifits')
 
 # -- simple chi2 map
@@ -377,12 +377,14 @@ def _injectCompanionData(data, delta, param):
     return res
 
 def _generateFitData(chi2Data, observables):
-    _meas, _errs, _uv, _type = np.array([]), np.array([]), [], []
+    _meas, _errs, _wl, _uv, _type = np.array([]), np.array([]), np.array([]), [], []
     for c in chi2Data:
         if c[0].split(';')[0] in observables:
             _type.extend([c[0]]*len(c[-2].flatten()))
             _meas = np.append(_meas, c[-2].flatten())
             _errs = np.append(_errs, c[-1].flatten())
+            _wl = np.append(_wl, c[-3].flatten())
+
             if c[0].split(';')[0] == 'v2':
                 _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3].flatten())
             elif c[0].split(';')[0].startswith('v2_'):
@@ -393,10 +395,10 @@ def _generateFitData(chi2Data, observables):
                                                 np.sqrt((c[1]+c[3]).flatten()**2+(c[3]+c[4]).flatten()**2)/c[5].flatten()))
 
     _errs += _errs==0. # remove bad point in a dirty way
-    return _meas, _errs, _uv, np.array(_type)
+    return _meas, _errs, _uv, np.array(_type), _wl
 
 def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
-    _meas, _errs, _uv, _types = _generateFitData(chi2Data, observables)
+    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables)
     fitOnly=[]
     if param['f']!=0:
         fitOnly.extend(['x', 'y', 'f'])
@@ -423,7 +425,7 @@ def _chi2Func(param, chi2Data, observables):
     Returns the chi2r comparing model of parameters "param" and data "chi2Data", only
     considering "observables" (such as v2, cp, t3)
     """
-    _meas, _errs, _uv, _types = _generateFitData(chi2Data, observables)
+    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables)
 
     res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))**2/_errs**2
     res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
@@ -1673,7 +1675,7 @@ class Open:
         for _k in self.dwavel.keys():
             param['dwavel;'+_k] = self.dwavel[_k]
 
-        _meas, _errs, _uv, _types = _generateFitData(self._rawData, self.observables)
+        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData, self.observables)
         _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in self.observables, self._rawData), param)
         plt.close(fig)
         plt.figure(fig, figsize=(11,8))
@@ -1684,14 +1686,17 @@ class Open:
             ax1 = plt.subplot(2,N,i+1)
             plt.title(t.split(';')[1])
             plt.ylabel(t.split(';')[0])
-            plt.errorbar(_uv[w], _meas[w], yerr=_errs[w], fmt='o', color='k', alpha=0.5)
-            plt.plot(_uv[w], _mod[w], '.r')
+            plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
+                         color='k', alpha=0.2)
+            plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='gist_rainbow_r', alpha=0.5)
+            plt.plot(_uv[w], _mod[w], '.k', alpha=0.2)
             plt.subplot(2,N,i+1+N, sharex=ax1)
-            plt.plot(_uv[w], (_meas[w]-_mod[w])/_errs[w], '.r', alpha=0.5)
+            plt.plot(_uv[w], (_meas[w]-_mod[w])/_errs[w], '.k', alpha=0.5)
             plt.xlabel('B/$\lambda$')
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
         print _meas.shape, _mod.shape
+
     def _cb_nsigmaFunc(self, r):
         """
         callback function for detectionLimit()
