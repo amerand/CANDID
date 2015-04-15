@@ -67,12 +67,12 @@ print """
 print ' | version:', __version__
 
 # -- some general parameters:
-CONFIG = {#'n_smear': 3, # number of channels for bandwidth smearing -> OBSOLETE!
-          'default cmap':'cubehelix', # color map used
+CONFIG = {'default cmap':'cubehelix', # color map used
           'chi2 scale': 'lin', # can be log
           'longExecWarning': 180, # in seconds
           'suptitle':True, # display over head title
           'progress bar': True,
+          'Ncores': None # default is to use N-1 Cores
           }
 
 # -- units of the parameters
@@ -81,7 +81,6 @@ def paramUnits(s):
         return 'um'
     else:
         return {'x':'mas', 'y':'mas', 'f':'%', 'diam*':'mas', 'diamc':'mas'}[s]
-
 
 def variables():
     print ' > global parameters (can be updated):'
@@ -153,12 +152,9 @@ def _Vud(base, diam, wavel):
     - diam in mas
     - wavel in um
     """
-    c = np.pi/180/3600000.*1e6
-    x = c*diam*base/wavel
+    x = 0.01523087098933543*diam*base/wavel
     x += 1e-6*(x==0)
-    x *= np.pi
-    res = np.array(2*scipy.special.jv(1, x)/(x))
-    return res
+    return 2*scipy.special.j1(x)/(x)
 
 def _Vbin(uv, param):
     """
@@ -174,7 +170,7 @@ def _Vbin(uv, param):
     if 'f' in param.keys():
         f = np.abs(param['f'])/100.
     else:
-        f = param['f']/100.
+        f = 1/100.
     f = min(f, 1.0) #
 
     c = np.pi/180/3600000.*1e6
@@ -184,8 +180,8 @@ def _Vbin(uv, param):
     if 'diamc' in param.keys():
         Vcomp = _Vud(B, param['diamc'], param['wavel'])
     else:
-        Vcomp = 1.0 # assumes it is unresolved.
-    Vcomp = Vcomp * np.exp(-1j*phi)
+        Vcomp = 1.0 # -- assumes it is unresolved.
+    Vcomp *= np.exp(-1j*phi)
 
     # -- Alex's formula to take into account the bandwith smearing
     # -- >>> Only works for V and V2, not for CP ??? -> TBD
@@ -251,7 +247,7 @@ def _modelObservables(obs, param):
                     res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
                 tmp['wavel'] = wl0
                 res[i] /= float(CONFIG['n_smear'])
-        elif o[0].split(';')[0].startswith('v2_'):
+        elif o[0].split(';')[0].startswith('v2_'): # polynomial fit
             p = int(o[0].split(';')[0].split('_')[1])
             n = int(o[0].split(';')[0].split('_')[2])
             # -- wl range based on min, mean, max
@@ -287,11 +283,27 @@ def _modelObservables(obs, param):
             elif o[0].split(';')[0]=='t3':
                 res[i] = np.absolute(t3)
 
+        elif o[0].split(';')[0].startswith('cp_'): # polynomial fit
+            p = int(o[0].split(';')[0].split('_')[1])
+            n = int(o[0].split(';')[0].split('_')[2])
+            # -- wl range based on min, mean, max
+            _wl = np.linspace(o[-4][0], o[-4][2], 2*n+2)
+            # -- remove pix width
+            tmp.pop('dwavel')
+            _cp = []
+            for _l in _wl:
+                tmp['wavel']=_l
+                _cp.append(np.angle(_Vbin([o[1], o[2]], tmp)*
+                                    _Vbin([o[3], o[4]], tmp)*
+                                    np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))))
+            _cp = np.array(_cp)
+            res[i] = np.array([np.polyfit(_wl-o[-4][1], _cp[:,j], n)[n-p] for j in range(_cp.shape[1])])
         else:
             print 'ERROR: unreckognized observable:', o[0]
     res2 = np.array([])
     for r in res:
         res2 = np.append(res2, r.flatten())
+
     return res2
 
 def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
@@ -509,7 +521,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-    def __init__(self, filename, rmin=None, rmax=None, Ncores=None, reducePoly=None):
+    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
@@ -526,7 +538,7 @@ class Open:
             for i,f in enumerate(files):
                 print ' > file %d/%d: %s'%(i+1, len(files), f)
                 try:
-                    self._loadOifitsData(os.path.join(filename, f, reducePoly=reducePoly))
+                    self._loadOifitsData(os.path.join(filename, f), reducePoly=reducePoly)
                 except:
                     print '   -> ERROR! could not read', os.path.join(filename, f)
             self.filename = filename
@@ -538,6 +550,7 @@ class Open:
 
             self._initOiData()
             self._loadOifitsData(filename, reducePoly=reducePoly)
+
         print ' > compute aux data for companion injection'
         self._compute_delta()
         #self.estimateCorrSpecChannels()
@@ -567,7 +580,7 @@ class Open:
             print " | rmax= not given, set to Field of View: rmax=%5.2f mas"%self.rmax
         self.diam = None
         self.bestFit = None
-        self.Ncores = Ncores
+        #self.Ncores = Ncores
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
         #     print ' | no diameter given, trying to estimate it...'
@@ -614,6 +627,7 @@ class Open:
             self.ediam = np.nan
             self.chi2_UD = 1.0
         return
+
     def _initOiData(self):
         self.wavel = {} # wave tables for each instrumental setup
         self.dwavel = {} # -- average width of the spectral channels
@@ -632,6 +646,7 @@ class Open:
 
         reducePoly: reduce data by poly fit of order "reducePoly" on as a function wavelength
         """
+        print 'loading OIFITS file'
         self._fitsHandler = fits.open(filename)
         self._dataheader={}
         for k in ['X','Y','F']:
@@ -641,7 +656,6 @@ class Open:
                 pass
 
         # -- load Wavelength and Array: ----------------------------------------------
-
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH':
                 self.wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
@@ -692,6 +706,29 @@ class Open:
                     data[wl>amberWLmax] = np.nan
                     for b in amberAtmBand:
                         data[np.abs(wl-b)<0.1] = np.nan
+
+                if not reducePoly is None:
+                    p = []
+                    ep = []
+                    for i in range(len(data)):
+                        if all(np.isnan(data[i])) or all(np.isnan(hdu.data['T3PHIERR'][i])):
+                            tmp = {'A'+str(j):np.nan for j in range(reducePoly+1)},\
+                                {'A'+str(j):np.nan for j in range(reducePoly+1)}
+                        else:
+                            tmp = _decomposeObs(self.wavel[ins], data[i], hdu.data['T3PHIERR'][i], reducePoly)
+                        p.append(tmp[0])
+                        ep.append(tmp[1])
+                    # -- each order:
+                    for j in range(reducePoly+1):
+                        self._rawData.append(('cp_%d_%d;'%(j,reducePoly)+ins,
+                          hdu.data['U1COORD'],
+                          hdu.data['V1COORD'],
+                          hdu.data['U2COORD'],
+                          hdu.data['V2COORD'],
+                          self.wavel_3m[ins],
+                          hdu.data['MJD'],
+                          np.array([x['A'+str(j)] for x in p]),
+                          np.array([x['A'+str(j)] for x in ep])))
 
                 if np.sum(np.isnan(data))<data.size:
                     self._rawData.append(('cp;'+ins,
@@ -772,6 +809,7 @@ class Open:
                           hdu.data['MJD'],
                           np.array([x['A'+str(j)] for x in p]),
                           np.array([x['A'+str(j)] for x in ep])))
+
                 self._rawData.append(('v2;'+ins,
                       hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
@@ -864,17 +902,28 @@ class Open:
         self._fitsHandler.close()
         return
     def _pool(self):
-        if self.Ncores is None:
+        if CONFIG['Ncores'] is None:
             self.Ncores = max(multiprocessing.cpu_count()-1,1)
-        return multiprocessing.Pool(self.Ncores)
+        else:
+            self.Ncores = CONFIG['Ncores']
+        if self.Ncores==1:
+            return None
+        else:
+            return multiprocessing.Pool(self.Ncores)
     def _estimateRunTime(self, function, params):
         # -- estimate how long it will take, in two passes
         p = self._pool()
         t = time.time()
-        for m in params:
-            p.apply_async(function, m)
-        p.close()
-        p.join()
+        if p is None:
+            # -- single thread:
+            for m in params:
+                apply(function, m)
+        else:
+            # -- multithreaded:
+            for m in params:
+                p.apply_async(function, m)
+            p.close()
+            p.join()
         return (time.time()-t)/len(params)
     def _cb_chi2Map(self, r):
         """
@@ -968,13 +1017,12 @@ class Open:
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
-
         print ''
         # -- done estimating time
 
         # -- compute actual grid:
         p = self._pool()
-        #t = time.time()
+
         for i,x in enumerate(allX):
             for j,y in enumerate(allY):
                 if self.mapChi2[j,i]==0:
@@ -983,14 +1031,16 @@ class Open:
                     for _k in self.dwavel.keys():
                         params['dwavel;'+_k] = self.dwavel[_k]
 
-                    # -- multi-thread:
-                    p.apply_async(_chi2Func, (params, self._chi2Data, self.observables),
+                    if p is None:
+                        # -- single thread:
+                        self._cb_chi2Map(_chi2Func(params, self._chi2Data, self.observables))
+                    else:
+                        # -- multi-thread:
+                        p.apply_async(_chi2Func, (params, self._chi2Data, self.observables),
                                   callback=self._cb_chi2Map)
-                    # -- single thread:
-                    #self._cb_chi2Map(_chi2Func(params, self._chi2Data, self.observables))
-        p.close()
-        p.join()
-        #print 'it actually took %d seconds'%(time.time()-t)
+        if not p is None:
+            p.close()
+            p.join()
 
         # -- take care of unfitted zone, for esthetics
         self.mapChi2[self.mapChi2<=0] = self.chi2_UD
@@ -1181,14 +1231,17 @@ class Open:
                     if not doNotFit is None:
                         _doNotFit.extend(doNotFit)
                     params.append(tmp)
-                    # -- multiple threads:
-                    p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables, None, _doNotFit),
+                    if p is None:
+                        # -- single thread:
+                        self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data, self.observables, None, _doNotFit))
+                    else:
+                        # -- multiple threads:
+                        p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables, None, _doNotFit),
                                  callback=self._cb_fitFunc)
-                    # -- single thread:
-                    #self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data, self.observables, None, _doNotFit))
                     k += 1
-        p.close()
-        p.join()
+        if not p is None:
+            p.close()
+            p.join()
         #print 'it actually took %4.1fs'%(time.time()-t0)
 
         print ' | Computing map of interpolated Chi2 minima'
@@ -1539,13 +1592,16 @@ class Open:
                     mask[mask==0] += np.nan
                     # -- weight the error bars
                     data[-1][-1] = data[-1][-1]/mask[None,:]
-            # -- multi thread:
-            p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso, doNotFit), callback=self._cb_fitFunc)
-            # -- single thread:
-            #self._cb_fitFunc(_fitFunc(tmp, data, self.observables, fitAlso, doNotFit))
+            if p is None:
+                # -- single thread:
+                self._cb_fitFunc(_fitFunc(tmp, data, self.observables, fitAlso, doNotFit))
+            else:
+                # -- multi thread:
+                p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso, doNotFit), callback=self._cb_fitFunc)
+        if not p is None:
+            p.close()
+            p.join()
 
-        p.close()
-        p.join()
         plt.close(fig)
         if CONFIG['suptitle']:
             plt.figure(fig, figsize=(11,10))
@@ -1795,13 +1851,17 @@ class Open:
                                   '_i':i, '_j':j}
                         for _k in self.dwavel.keys():
                             params['dwavel;'+_k] = self.dwavel[_k]
-                        # -- parallel:
-                        p.apply_async(_detectLimit, (params, self._chi2Data, self.observables,
+                        if p is None:
+                            # -- single thread:
+                            self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data, self.observables,
+                                           self._delta, method))
+                        else:
+                            # -- parallel:
+                            p.apply_async(_detectLimit, (params, self._chi2Data, self.observables,
                                        self._delta, method), callback=self._cb_nsigmaFunc)
-                        # -- single thread:
-                        #self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data, self.observables,
-                        #                self._delta, method))
-            p.close(); p.join()
+            if not p is None:
+                p.close()
+                p.join()
             # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
             self.allf3s[method] = self.f3s.copy()
