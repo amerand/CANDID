@@ -12,7 +12,7 @@ The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leasts
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
 ### Non-Detection Limit
-There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection (Gallenne et al. 2015, in preparation).
+There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection [Gallenne et al. 2015](http://arxiv.org/abs/1505.02715).
 
 ## Known limitations
 
@@ -151,13 +151,12 @@ On the correlations plots, the red dot with error bars is the fitted position; t
 We here remove the companion analytically (using a high contrast hypothesis) from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
 
 ```
->>> axcir.detectionLimit(fig=5, removeCompanion=p)
- > step= not given, using 1/2 X smallest spatial scale = 0.89 mas
+>>> axcir.detectionLimit(fig=5, step=1.5, removeCompanion=p)
  > observables: ['v2', 'cp']
  > UD Fit
- | best fit diameter: 0.829 +- 0.006 mas
- | chi2 UD = 0.747
- > Detection Limit Map 124x124 ... it should take about 171 seconds
+ | best fit diameter: 0.814 +- 0.006 mas
+ | chi2 UD = 0.738
+ > Detection Limit Map 74x74 ... it should take about 139 seconds
  > Method: Absil
  |================================================== | 99%   0 s remaining
  > Method: injection
