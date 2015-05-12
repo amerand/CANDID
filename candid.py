@@ -32,8 +32,6 @@ import os
 #__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
 __version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
 
-
-
 """
 # --------------------
 # -- standard test: --
@@ -553,7 +551,7 @@ class Open:
 
         print ' > compute aux data for companion injection'
         self._compute_delta()
-        #self.estimateCorrSpecChannels()
+        self.estimateCorrSpecChannels()
         # -- all MJDs in the files:
         mjds = []
         for d in self._rawData:
@@ -871,11 +869,13 @@ class Open:
             if r[0].split(';')[0] == 'v2':
                 self._delta.append(None)
         return
-    def estimateCorrSpecChannels(self):
+    def estimateCorrSpecChannels(self, verbose=False):
         """
         estimate correlation between spectral channels
         """
         self.corrSC = []
+        if verbose:
+            print ' > Estimating correlations in error bars within spectral bands (E**2 == E_stat**2 + E_syst**2):'
         for d in self._rawData:
             tmp = []
             #print d[0], d[-1].shape
@@ -885,8 +885,10 @@ class Open:
                 model = _dpfit_leastsqFit(_dpfit_polyN, d[-4][k],
                                           {'A'+str(i):0.0 for i in range(n)},
                                           d[-2][k], d[-1][k])['model']
-                tmp.append( _estimateCorrelation(d[-2][k], d[-1][k], model)**2/np.mean(d[-1][k]**2))
+                tmp.append( _estimateCorrelation(d[-2][k], d[-1][k], model))
             self.corrSC.append(tmp)
+            if verbose:
+                print '   ', d[0], '<E_syst / E_stat> = %4.2f'%(np.mean(tmp))
         return
 
     def ndata(self):
@@ -1478,7 +1480,8 @@ class Open:
             for s in tmp:
                 print ' | %5s='%s, '%8.4f +- %6.4f %s'%(fit['best'][s], fit['uncer'][s], paramUnits(s))
         return
-    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True, monteCarlo=False, corrSpecCha=None):
+
+    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True, monteCarlo=False, corrSpecCha=None, nSigmaClip=3.5):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap. It can also been entered
@@ -1508,8 +1511,8 @@ class Open:
         except:
             pass
         if N is None:
-            print " > 'N=' not given, setting it to Ndata"
-            N = max(self.ndata(), 100)
+            print " > 'N=' not given, setting it to Ndata/2"
+            N = max(self.ndata()/2, 100)
 
         print " > running N=%d fit"%N,
         self._progTime = [time.time(), time.time()]
@@ -1535,8 +1538,8 @@ class Open:
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
-        else:
-            print ''
+
+        print ''
         tmp = {k:param[k] for k in param.keys()}
         for _k in self.dwavel.keys():
             tmp['dwavel;'+_k] = self.dwavel[_k]
@@ -1560,9 +1563,9 @@ class Open:
             tmp = {k:param[k] for k in param.keys()}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
-            if i==0:
-                print ' > inital parameters set to param=', tmp
-                print ''
+            # if i==0:
+            #     print ' > inital parameters set to param=', tmp
+            #     print ''
 
             tmp['_k'] = i
             data = []
@@ -1621,21 +1624,23 @@ class Open:
         kz.sort()
         ax = {}
         # -- sigma cliping on the chi2
-        nsigma = 5
-        # print ' > sigma clipping in Chi2 for nSigmas= %3.1f'%(nsigma)
-        # chi2 = np.array([a['chi2'] for a in self.allFits])
-        # w = np.where((chi2<=np.median(chi2) + nsigma*(np.percentile(chi2, 84)-np.median(chi2)))*
-        #              (chi2>=np.median(chi2) + nsigma*(np.percentile(chi2, 16)-np.median(chi2))))
-        # print ' | %d fits ignored'%(len(chi2)-len(w[0]))
 
-        print ' > sigma clipping in position for nSigmas= %3.1f'%(nsigma)
+        print ' > sigma clipping in position and flux ratio for nSigmaClip= %3.1f'%(nSigmaClip)
         x = np.array([a['best']['x'] for a in self.allFits])
         y = np.array([a['best']['y'] for a in self.allFits])
+        f = np.array([a['best']['f'] for a in self.allFits])
+        d = np.array([a['best']['diam*'] for a in self.allFits])
 
-        w = np.where((x<=np.median(x) + nsigma*(np.percentile(x, 84)-np.median(x)))*
-                     (x>=np.median(x) + nsigma*(np.percentile(x, 16)-np.median(x)))*
-                     (y<=np.median(y) + nsigma*(np.percentile(y, 84)-np.median(y)))*
-                     (y>=np.median(y) + nsigma*(np.percentile(y, 16)-np.median(y))))
+
+        w = np.where((x<=np.median(x) + nSigmaClip*(np.percentile(x, 84)-np.median(x)))*
+                     (x>=np.median(x) + nSigmaClip*(np.percentile(x, 16)-np.median(x)))*
+                     (y<=np.median(y) + nSigmaClip*(np.percentile(y, 84)-np.median(y)))*
+                     (y>=np.median(y) + nSigmaClip*(np.percentile(y, 16)-np.median(y)))*
+                     (f<=np.median(f) + nSigmaClip*(np.percentile(f, 84)-np.median(f)))*
+                     (f>=np.median(f) + nSigmaClip*(np.percentile(f, 16)-np.median(f)))*
+                     (d<=np.median(d) + nSigmaClip*(np.percentile(d, 84)-np.median(d)))*
+                     (d>=np.median(d) + nSigmaClip*(np.percentile(d, 16)-np.median(d)))
+                     )
         print ' | %d fits ignored'%(len(x)-len(w[0]))
 
 
@@ -1708,7 +1713,8 @@ class Open:
                     res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
-        return res
+        return
+        # -_-_-
     def plotModel(self, param=None, fig=3):
         """
         param: what companion model to plot. If None, will attempt to use self.bestFit
@@ -1751,8 +1757,8 @@ class Open:
             plt.xlabel('B/$\lambda$')
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
-        print _meas.shape, _mod.shape
-
+        #print _meas.shape, _mod.shape
+        return
     def _cb_nsigmaFunc(self, r):
         """
         callback function for detectionLimit()
@@ -2282,25 +2288,31 @@ def _decomposeObs(wl, data, err, order=1, plot=False):
 def _estimateCorrelation(data, errors, model):
     """
     assumes errors**2 = stat**2 + sys**2, will compute sys so the chi2 from stat error bars is 1.
+
+    estimate the average correlation in a sample (sys/<err>)
     """
     sys = np.min(errors)/2.
-    fact = 0.8
+    fact = 0.5
     chi2 = np.mean((data-model)**2/(errors**2-sys**2))
     tol = 1.e-3
-    if chi2 <= 1:
-        return 0.0
-
-    while np.abs(chi2-1)>tol and sys/np.min(errors)>tol:
+    # if chi2 <= 1:
+    #      return 0.0
+    n = 0
+    #print '%4.2f'%chi2, '->',
+    while np.abs(chi2-1)>tol and sys/np.min(errors)>tol and n<20:
         #print sys, chi2
         if chi2>1:
             sys *= fact
-        elif chi2<1:
+        else:
             sys /= fact
         _chi2 = np.mean((data-model)**2/(errors**2-sys**2))
         if (chi2-1)*(_chi2-1)<0:
             fact = np.sqrt(fact)
         chi2 = _chi2
-    return sys
+        n+=1
+    #print '%5.2f : ERR=%5.3f SYS=%5.3f STA=%5.3f %2d'%(chi2, np.mean(errors),
+    #                                                   sys, np.sqrt(np.mean(errors**2)-sys**2), n)
+    return sys/np.mean(errors)
 
 class pca():
     """

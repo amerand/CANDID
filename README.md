@@ -84,18 +84,18 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like fo
  > UD Fit
  | best fit diameter: 0.932 +- 0.006 mas
  | chi2 UD = 0.975
- > Grid Fitting 30x30: ... it should take about 79 seconds
- |================================================== |  99%   0 s remainingg
+ > Grid Fitting 30x30: ... it should take about 54 seconds
+ |================================================== |  99%   0 s remaining
  | Computing map of interpolated Chi2 minima
- | 286 individual minima for 643 fits
- | 10, 50, 90 percentiles for fit displacement: 1.1, 2.6, 5.1 mas
- | Grid has the correct steps of 3.78mas, optimimum step size found to be 3.56mas
- > BEST FIT 0: chi2= 0.74
- |     x=  6.22e+00 +- 5.96e-02
- |     y= -2.85e+01 +- 7.74e-02
- |     f=  8.33e-01 +- 3.83e-02
- | diam*=  8.30e-01 +- 7.68e-03
- | chi2r_UD=0.98, chi2r_BIN=0.74, NDOF=1499 -> n sigma: 13.89
+ | 255 individual minima for 643 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.1, 2.8, 5.3 mas
+ | Grid has the correct steps of 3.78mas, optimimum step size found to be 3.81mas
+ > BEST FIT 0: chi2= 0.73
+ |     x=   6.2403 +- 0.0575 mas
+ |     y= -28.5270 +- 0.0835 mas
+ |     f=   0.9395 +- 0.0423 %
+ | diam*=   0.8156 +- 0.0081 mas
+ | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.35 (assumes uncorr data)
 ```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
@@ -109,20 +109,20 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
  > observables: ['v2', 'cp']
  > Preliminary analysis
  > UD Fit
- | best fit diameter: 0.829 +- 0.006 mas
- | chi2 UD = 0.747
- > Grid Fitting 30x30: ... it should take about 28 seconds
+ | best fit diameter: 0.814 +- 0.006 mas
+ | chi2 UD = 0.738
+ > Grid Fitting 30x30: ... it should take about 32 seconds
  |================================================== |  99%   0 s remaining
  | Computing map of interpolated Chi2 minima
- | 362 individual minima for 643 fits
- | 10, 50, 90 percentiles for fit displacement: 1.0, 2.6, 5.1 mas
- | Grid has the correct steps of 3.78mas, optimimum step size found to be 3.68mas
- > BEST FIT 0: chi2= 0.70
- |     x=  6.53e+00 +- 1.26e-01
- |     y=  2.31e+00 +- 1.75e-01
- |     f=  3.64e-01 +- 3.66e-02
- | diam*=  7.66e-01 +- 9.17e-03
- | chi2r_UD=0.75, chi2r_BIN=0.70, NDOF=1499 -> n sigma:  2.17
+ | 308 individual minima for 643 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.2, 3.1, 6.4 mas
+ | Grid has the correct steps of 3.78mas, optimimum step size found to be 4.25mas
+ > BEST FIT 0: chi2= 0.69
+ |     x=   6.6173 +- 0.1284 mas
+ |     y=   2.4005 +- 0.1745 mas
+ |     f=   0.3648 +- 0.0373 %
+ | diam*=   0.7491 +- 0.0094 mas
+ | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.10 (assumes uncorr data)
 ```
 
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
@@ -133,10 +133,15 @@ In order to better estimate the uncertainties on the companion we found, we can 
 On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
 
 ```
->>> axcir.fitBoot(param=p)
- > 'N=' not given, setting it to Ndata / 3
- > running 'N='500 fit ... it should take about 3 seconds
+>>> axcir.fitBoot(fig=4, param=p)
+ > 'N=' not given, setting it to Ndata/2
  |================================================== |  99%   0 s remaining
+ > sigma clipping in position and flux ratio for nSigmaClip= 3.5
+ | 3 fits ignored
+ |    diam* =   0.8144 + 0.0118 - 0.0158 mas
+ |        f =   0.9505 + 0.0984 - 0.1062 %
+ |        x =   6.2286 + 0.0950 - 0.1467 mas
+ |        y = -28.5341 + 0.1343 - 0.2424 mas
 ```
 
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
