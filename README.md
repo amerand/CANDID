@@ -18,6 +18,7 @@ There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu
 
 The code has *not* been deeply error proofed. If you encounter problems or bugs, do not hesitate to contact the developpers.
 
+* *The (non-)detection levels are given assuming the errors bars in the data are uncorrelated*. This is of course *not* the case for real data, in particular when a lot of spectral channels are present.
 * The code works only with a single OIFITS file. You will need an external tool to combine OIFITS files
 * The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
 * The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
