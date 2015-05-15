@@ -660,7 +660,10 @@ class Open:
                 self.wavel_3m[hdu.header['INSNAME']] = (self.wavel[hdu.header['INSNAME']].min(),
                                                         self.wavel[hdu.header['INSNAME']].mean(),
                                                         self.wavel[hdu.header['INSNAME']].max())
-                self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
+                try:
+                    self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
+                except:
+                    self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
                 self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
                 self.dwavel[hdu.header['INSNAME']]=np.mean(self.all_dwavel[hdu.header['INSNAME']])
             if hdu.header['EXTNAME']=='OI_ARRAY':
@@ -696,6 +699,11 @@ class Open:
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 data[hdu.data['T3PHIERR']>1e8] = np.nan # we'll deal with that later...
+                if len(data.shape)==1:
+                    data = np.array([np.array([d]) for d in data])
+                err = hdu.data['T3PHIERR']*np.pi/180
+                if len(err.shape)==1:
+                    err = np.array([np.array([e]) for e in err])
                 if 'AMBER' in ins:
                     # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin
                     # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax
@@ -709,11 +717,11 @@ class Open:
                     p = []
                     ep = []
                     for i in range(len(data)):
-                        if all(np.isnan(data[i])) or all(np.isnan(hdu.data['T3PHIERR'][i])):
+                        if all(np.isnan(data[i])) or all(np.isnan(err[i])):
                             tmp = {'A'+str(j):np.nan for j in range(reducePoly+1)},\
                                 {'A'+str(j):np.nan for j in range(reducePoly+1)}
                         else:
-                            tmp = _decomposeObs(self.wavel[ins], data[i], hdu.data['T3PHIERR'][i], reducePoly)
+                            tmp = _decomposeObs(self.wavel[ins], data[i], err[i], reducePoly)
                         p.append(tmp[0])
                         ep.append(tmp[1])
                     # -- each order:
@@ -736,13 +744,18 @@ class Open:
                           hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
                           self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
                           hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                          data, hdu.data['T3PHIERR']*np.pi/180))
+                          data, err))
                 else:
                     print ' | WARNING: no valid T3PHI values in this HDU'
                 # -- T3
                 data = hdu.data['T3AMP']
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 data[hdu.data['T3AMPERR']>1e8] = np.nan # we'll deal with that later...
+                if len(data.shape)==1:
+                    data = np.array([np.array([d]) for d in data])
+                err = hdu.data['T3AMPERR']
+                if len(err.shape)==1:
+                    err = np.array([np.array([e]) for e in err])
                 if 'AMBER' in ins:
                     # print ' | !!AMBER: rejecting T3 WL<%3.1fum'%amberWLmin
                     # print ' | !!AMBER: rejecting T3 WL>%3.1fum'%amberWLmax
@@ -761,7 +774,7 @@ class Open:
                           hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
                           self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
                           hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                          data, hdu.data['T3AMPERR']))
+                          data, err))
                 else:
                     print ' | WARNING: no valid T3AMP values in this HDU'
                 Bmax = (hdu.data['U1COORD']**2+hdu.data['V1COORD']**2).max()
@@ -774,6 +787,11 @@ class Open:
                 self.diffFov = min(self.diffFov, 1.2*self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
             if hdu.header['EXTNAME']=='OI_VIS2':
                 data = hdu.data['VIS2DATA']
+                if len(data.shape)==1:
+                    data = np.array([np.array([d]) for d in data])
+                err = hdu.data['VIS2ERR']
+                if len(err.shape)==1:
+                    err = np.array([np.array([e]) for e in err])
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 if 'AMBER' in ins:
                     # print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
@@ -813,7 +831,7 @@ class Open:
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
                       self.wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
                       hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                      data, hdu.data['VIS2ERR']))
+                      data, err))
 
                 Bmax = (hdu.data['UCOORD']**2+hdu.data['VCOORD']**2).max()
                 Bmax = np.sqrt(Bmax)
@@ -839,7 +857,6 @@ class Open:
             allV2['v2'] = np.append(allV2['v2'], r[-2].flatten())
 
         # -- delta for approximation, very long!
-
         for r in self._rawData:
             if r[0].split(';')[0] in ['cp', 't3']:
                 # -- this will contain the delta for this r
