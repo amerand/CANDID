@@ -66,7 +66,7 @@ print ' | version:', __version__
 
 # -- some general parameters:
 CONFIG = {'default cmap':'cubehelix', # color map used
-          'chi2 scale': 'lin', # can be log
+          'chi2 scale' : 'lin', # can be log
           'longExecWarning': 180, # in seconds
           'suptitle':True, # display over head title
           'progress bar': True,
@@ -78,7 +78,7 @@ def paramUnits(s):
     if 'dwavel' in s:
         return 'um'
     else:
-        return {'x':'mas', 'y':'mas', 'f':'%', 'diam*':'mas', 'diamc':'mas'}[s]
+        return {'x':'mas', 'y':'mas', 'f':'%', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none'}[s]
 
 def variables():
     print ' > global parameters (can be updated):'
@@ -98,7 +98,7 @@ def Verify():
     a = Open(filename, rmin=2, rmax=20)
 
     diam = 0.9
-    p = {'x':12.0, 'y':12.0, 'f':0.00, 'diam*':diam, 'dwavel':a.dwavel}
+    p = {'x':12.0, 'y':12.0, 'f':0.00, 'diam*':diam, 'dwavel':a.dwavel, 'alpha*':0.0}
     print '\nreplace data with synthetic ones for UD diam=%3.2f mas, without companion'%p['diam']
 
     s = _modelObservables(a._rawData, p)
@@ -154,6 +154,18 @@ def _Vud(base, diam, wavel):
     x += 1e-6*(x==0)
     return 2*scipy.special.j1(x)/(x)
 
+def _Vld(base, diam, wavel, alpha=0.36):
+
+    nu = alpha /2. + 1.
+    diam *= np.pi/(180*3600.*1000)
+    x = -1.*(np.pi*diam*base/wavel/1.e-6)**2/4.
+    V_ = 0
+    for k_ in range(50):
+        V_ += scipy.special.gamma(nu+1.)/\
+             scipy.special.gamma(nu + 1.+k_)/\
+             scipy.special.gamma(k_ + 1.) *x**k_
+    return V_
+
 def _Vbin(uv, param):
     """
     Analytical complex visibility of a binary composed of a uniform
@@ -161,6 +173,7 @@ def _Vbin(uv, param):
     containing:
 
     'diam*': in mas
+    'alpha*': optional LD coef for main star
     'wavel': in um
     'x, y': in mas
     'f': flux ratio in % -> takes the absolute value
@@ -173,12 +186,15 @@ def _Vbin(uv, param):
 
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
-    Vstar = _Vud(B, param['diam*'], param['wavel'])
+    if 'alpha*' in param.keys() and param['alpha*']>0.0:
+        Vstar = _Vld(B, param['diam*'], param['wavel'], alpha=param['alpha*'])
+    else:
+        Vstar = _Vud(B, param['diam*'], param['wavel'])
     phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
     if 'diamc' in param.keys():
-        Vcomp = _Vud(B, param['diamc'], param['wavel'])
+        Vcomp = _Vud(B, param['diamc'], param['wavel'])+0j
     else:
-        Vcomp = 1.0 # -- assumes it is unresolved.
+        Vcomp = 1.0 +0j # -- assumes it is unresolved.
     Vcomp *= np.exp(-1j*phi)
 
     # -- Alex's formula to take into account the bandwith smearing
@@ -259,7 +275,8 @@ def _modelObservables(obs, param):
             _v2 = np.array(_v2)
             res[i] = np.array([np.polyfit(_wl-o[-4][1], _v2[:,j], n)[n-p] for j in range(_v2.shape[1])])
 
-        elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3':
+        elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3' or\
+            o[0].split(';')[0]=='icp':
             tmp['wavel'] = o[5]
             if dwavel is None: # -- monochromatic
                 t3 = _Vbin([o[1], o[2]], tmp)*\
@@ -278,6 +295,8 @@ def _modelObservables(obs, param):
 
             if o[0].split(';')[0]=='cp':
                 res[i] = np.angle(t3)
+            elif o[0].split(';')[0]=='icp':
+                res[i] = np.exp(1j*np.angle(t3))
             elif o[0].split(';')[0]=='t3':
                 res[i] = np.absolute(t3)
 
@@ -303,6 +322,7 @@ def _modelObservables(obs, param):
         res2 = np.append(res2, r.flatten())
 
     return res2
+
 
 def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
     """
@@ -332,9 +352,12 @@ def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
             res = 90.
     return res
 
+
 def _injectCompanionData(data, delta, param):
     """
-    Inject analytically a companion defined as 'param' in the 'data' using 'delta'. 'delta' contains the corresponding V2 for T3 and CP first order calculations.
+    Inject analytically a companion defined as 'param' in the 'data' using
+    'delta'. 'delta' contains the corresponding V2 for T3 and CP first order
+    calculations.
 
     data and delta have same length
     """
@@ -360,7 +383,9 @@ def _injectCompanionData(data, delta, param):
             d[-2] = (d[-2] + 2*f*param['f']/100*np.sqrt(np.abs(d[-2]))*np.cos(phi) +
                      f**2*(param['f']/100.)**2)/(1+param['f']/100.)**2
 
-        if d[0].split(';')[0]=='cp' or d[0].split(';')[0]=='t3':
+        if d[0].split(';')[0]=='cp' or d[0].split(';')[0]=='t3' or\
+            d[0].split(';')[0]=='icp':
+
             phi0 = c*2*np.pi*(d[1]*param['x']+d[2]*param['y'])/d[5]
             phi1 = c*2*np.pi*(d[3]*param['x']+d[4]*param['y'])/d[5]
             phi2 = c*2*np.pi*((d[1]+d[3])*param['x']+(d[2]+d[4])*param['y'])/d[5]
@@ -379,11 +404,13 @@ def _injectCompanionData(data, delta, param):
             tmp = 1 + param['f']/100.*( f2*np.exp(-1j*phi2)/delta[i][2] +
                                         f1*np.exp(1j*phi1)/delta[i][1] +
                                         f0*np.exp(1j*phi0)/delta[i][0] )
+            # -- small angle approximation
             if d[0].split(';')[0]=='cp':
                 d[-2] -= np.angle(tmp)
-            else:
+            if d[0].split(';')[0]=='icp':
+                d[-2] = np.exp(1j*(np.angle(d[-2]-np.angle(tmp))))
+            else: # t3
                 d[-2] *= np.abs(tmp) /(1+param['f']/100.)**3
-
     return res
 
 def _generateFitData(chi2Data, observables):
@@ -399,7 +426,8 @@ def _generateFitData(chi2Data, observables):
                 _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3].flatten())
             elif c[0].split(';')[0].startswith('v2_'):
                 _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3][1])
-            elif c[0].split(';')[0] == 't3' or c[0].split(';')[0] == 'cp':
+            elif c[0].split(';')[0] == 't3' or c[0].split(';')[0] == 'cp' or\
+                c[0].split(';')[0] == 'icp':
                 _uv = np.append(_uv, np.maximum(np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[5].flatten(),
                                                 np.sqrt(c[3].flatten()**2+c[4].flatten()**2)/c[5].flatten(),
                                                 np.sqrt((c[1]+c[3]).flatten()**2+(c[3]+c[4]).flatten()**2)/c[5].flatten()))
@@ -420,7 +448,6 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
         for f in doNotFit:
             if f in fitOnly:
                 fitOnly.remove(f)
-
     res = _dpfit_leastsqFit(_modelObservables,
                             filter(lambda c: c[0].split(';')[0] in observables, chi2Data),
                             param, _meas, _errs, fitOnly = fitOnly)
@@ -430,6 +457,7 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
         res['best']['diam*'] = np.abs(res['best']['diam*'])
     return res
 
+
 def _chi2Func(param, chi2Data, observables):
     """
     Returns the chi2r comparing model of parameters "param" and data "chi2Data", only
@@ -437,9 +465,11 @@ def _chi2Func(param, chi2Data, observables):
     """
     _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables)
 
-    res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))**2/_errs**2
+    res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))
     res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
-    res = np.mean(res)
+    res[np.iscomplex(res)] = np.abs(res[np.iscomplex(res)])
+    res = res**2/_errs**2
+    res = np.real(np.mean(res))
     if '_i' in param.keys() and '_j' in param.keys():
         return param['_i'], param['_j'], res
     else:
@@ -478,8 +508,11 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
                                         [delta[k] for k in range(len(delta))
                                                 if chi2Data[k][0].split(';')[0] in observables],
                                         param)
-            tmp = {k:param[k] if k!='f' else 0.0 for k in param.keys()}
-            a, b = _chi2Func(tmp, data, observables)[-1], _chi2Func(param, data, observables)[-1]
+            tmp = {k:param[k] if k!='f' else 0.0 for k in param.keys()} # -- single star
+            if '_i' in param.keys() or '_j' in param.keys():
+                a, b = _chi2Func(tmp, data, observables)[-1], _chi2Func(param, data, observables)[-1]
+            else:
+                a, b = _chi2Func(tmp, data, observables), _chi2Func(param, data, observables)
             nsigma.append(_nSigmas(a, b, ndata))
 
         # -- Newton method:
@@ -516,18 +549,22 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
     else:
         return np.interp(3, nsigma, fr)
 
+
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None):
+
+    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None, wlOffset=0.0):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
         - Ncores: max number of core used, if None (default) will use all
           available cores but one.
+        - wlOffset (in um) will be *added* to the wavelength table. Mainly for AMBER in LR-HK
 
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
+        self.wlOffset = wlOffset # mainly to correct AMBER poor wavelength calibration...
         if os.path.isdir(filename):
             print ' > loading FITS files in ', filename
             files = os.listdir(filename)
@@ -578,6 +615,7 @@ class Open:
             print " | rmax= not given, set to Field of View: rmax=%5.2f mas"%self.rmax
         self.diam = None
         self.bestFit = None
+        self.alpha=0.0
         #self.Ncores = Ncores
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
@@ -585,6 +623,12 @@ class Open:
         #     self.fitUD()
         # else:
         #     self.diam = diam
+    def setLDcoefAlpha(self, alpha):
+        """
+        set the power law LD coef "alpha" for the main star. not fitted in any fit!
+        """
+        self.alpha=alpha
+        return
     def fitUD(self, forcedDiam=None):
         """
         FIT UD diameter model to the data (if )
@@ -597,28 +641,36 @@ class Open:
             ('v2' in self.observables or 't3' in self.observables) and\
             ('v2' in [c[0].split(';')[0] for c in self._chi2Data] or
              't3' in [c[0].split(';')[0] for c in self._chi2Data]):
-            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
+            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0, 'alpha*':self.alpha}
+            if self.alpha>0:
+                print ' > LD diam Fit'
+            else:
+                print ' > UD diam Fit'
+
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
-
-            print ' > UD Fit'
             self.chi2_UD = fit_0['chi2']
             print ' | best fit diameter: %5.3f +- %5.3f mas'%(fit_0['best']['diam*'],
                                                            fit_0['uncer']['diam*'])
             self.diam = fit_0['best']['diam*']
             self.ediam = fit_0['uncer']['diam*']
-            print ' | chi2 UD = %4.3f'%self.chi2_UD
+            print ' | chi2 = %4.3f'%self.chi2_UD
         elif not self.diam is None:
-            print ' > UD CHI2 (no fit!)'
-            print ' | Chi2 UD for diam=%4.3fmas'%self.diam
-            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0}
+            print ' > single star CHI2 (no fit!)'
+            if self.alpha==0:
+                print ' | Chi2 UD for diam=%4.3fmas'%self.diam
+            else:
+                print ' | Chi2 LD for diam=%4.3fmas, alpha=%4.3f'%(self.diam,
+                                                                self.alpha)
+
+            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0, 'alpha*':self.alpha}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
             self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables)
             self.ediam = np.nan
-            print ' |  chi2 UD = %4.3f'%self.chi2_UD
+            print ' |  chi2 = %4.3f'%self.chi2_UD
         else:
             print " | WARNING: a UD cannot be determined, and a valid 'diam' is not defined for Chi2 computation. ASSUMING CHI2UD=1.0"
             self.diam = None
@@ -656,14 +708,15 @@ class Open:
         # -- load Wavelength and Array: ----------------------------------------------
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH':
-                self.wavel[hdu.header['INSNAME']] = hdu.data['EFF_WAVE']*1e6 # in um
+                self.wavel[hdu.header['INSNAME']] = self.wlOffset + hdu.data['EFF_WAVE']*1e6 # in um
                 self.wavel_3m[hdu.header['INSNAME']] = (self.wavel[hdu.header['INSNAME']].min(),
                                                         self.wavel[hdu.header['INSNAME']].mean(),
                                                         self.wavel[hdu.header['INSNAME']].max())
-                try:
-                    self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
-                except:
-                    self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
+                #try:
+                #    self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
+                #except: # -- case of single spectral channel:
+                self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
+
                 self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
                 self.dwavel[hdu.header['INSNAME']]=np.mean(self.all_dwavel[hdu.header['INSNAME']])
             if hdu.header['EXTNAME']=='OI_ARRAY':
@@ -682,17 +735,17 @@ class Open:
         #amberWLmin, amberWLmax = 1.8, 2.4 # -- K
         #amberWLmin, amberWLmax = 1.4, 1.7 # -- H
         #amberWLmin, amberWLmax = 1.0, 1.3 # -- J
-        amberWLmin, amberWLmax = 1.5, 2.4 # -- H+K
-        #amberWLmin, amberWLmax = 1.0, 2.4 # -- J+H+K
+        amberWLmin, amberWLmax = 1.4, 2.5 # -- H+K
+        #amberWLmin, amberWLmax = 1.0, 2.5 # -- J+H+K
 
         amberAtmBand = [1.0, 1.35, 1.87]
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME'] in ['OI_T3', 'OI_VIS2']:
                 ins = hdu.header['INSNAME']
                 arr = hdu.header['ARRNAME']
-                if 'AMBER' in ins:
-                    print ' | Warning - AMBER: rejecting WL<%3.1fum'%amberWLmin
-                    print ' | Warning - AMBER: rejecting WL>%3.1fum'%amberWLmax
+                # if 'AMBER' in ins:
+                #     print ' | Warning - AMBER: rejecting WL<%3.1fum'%amberWLmin
+                #     print ' | Warning - AMBER: rejecting WL>%3.1fum'%amberWLmax
 
             if hdu.header['EXTNAME']=='OI_T3':
                 # -- CP
@@ -705,8 +758,8 @@ class Open:
                 if len(err.shape)==1:
                     err = np.array([np.array([e]) for e in err])
                 if 'AMBER' in ins:
-                    # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin
-                    # print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax
+                    print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin
+                    print ' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
@@ -726,7 +779,7 @@ class Open:
                         ep.append(tmp[1])
                     # -- each order:
                     for j in range(reducePoly+1):
-                        self._rawData.append(('cp_%d_%d;'%(j,reducePoly)+ins,
+                        self._rawData.append(['cp_%d_%d;'%(j,reducePoly)+ins,
                           hdu.data['U1COORD'],
                           hdu.data['V1COORD'],
                           hdu.data['U2COORD'],
@@ -734,17 +787,26 @@ class Open:
                           self.wavel_3m[ins],
                           hdu.data['MJD'],
                           np.array([x['A'+str(j)] for x in p]),
-                          np.array([x['A'+str(j)] for x in ep])))
+                          np.array([x['A'+str(j)] for x in ep])])
 
                 if np.sum(np.isnan(data))<data.size:
-                    self._rawData.append(('cp;'+ins,
-                          hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
-                          hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
-                          hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
-                          hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
-                          self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
-                          hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                          data, err))
+                    # self._rawData.append(['cp;'+ins,
+                    #       hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                    #       hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                    #       hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                    #       hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                    #       self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                    #       hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
+                    #       data, err])
+                    # -- complex closure phase
+                    self._rawData.append(['icp;'+ins,
+                        hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
+                        hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
+                        hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
+                        hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
+                        self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
+                        hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
+                        np.exp(1j*data), err])
                 else:
                     print ' | WARNING: no valid T3PHI values in this HDU'
                 # -- T3
@@ -757,8 +819,8 @@ class Open:
                 if len(err.shape)==1:
                     err = np.array([np.array([e]) for e in err])
                 if 'AMBER' in ins:
-                    # print ' | !!AMBER: rejecting T3 WL<%3.1fum'%amberWLmin
-                    # print ' | !!AMBER: rejecting T3 WL>%3.1fum'%amberWLmax
+                    print ' | !!AMBER: rejecting T3 WL<%3.1fum'%amberWLmin
+                    print ' | !!AMBER: rejecting T3 WL>%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
@@ -767,14 +829,14 @@ class Open:
                         data[np.abs(wl-b)<0.1] = np.nan
 
                 if np.sum(np.isnan(data))<data.size:
-                    self._rawData.append(('t3;'+ins,
+                    self._rawData.append(['t3;'+ins,
                           hdu.data['U1COORD'][:,None]+0*self.wavel[ins][None,:],
                           hdu.data['V1COORD'][:,None]+0*self.wavel[ins][None,:],
                           hdu.data['U2COORD'][:,None]+0*self.wavel[ins][None,:],
                           hdu.data['V2COORD'][:,None]+0*self.wavel[ins][None,:],
                           self.wavel[ins][None,:]+0*hdu.data['V1COORD'][:,None],
                           hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                          data, err))
+                          data, err])
                 else:
                     print ' | WARNING: no valid T3AMP values in this HDU'
                 Bmax = (hdu.data['U1COORD']**2+hdu.data['V1COORD']**2).max()
@@ -794,12 +856,12 @@ class Open:
                     err = np.array([np.array([e]) for e in err])
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 if 'AMBER' in ins:
-                    # print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
-                    # print ' | !!AMBER: rejecting V2 WL>%3.1fum'%amberWLmax
+                    print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
+                    print ' | !!AMBER: rejecting V2 WL>%3.1fum'%amberWLmax
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
-                    print ' | !!AMBER: rejecting bad V2',
+                    print ' | !!AMBER: rejecting bad V2 (<<0 or err too large):',
                     data[data<-3*hdu.data['VIS2ERR']] = np.nan
                     print np.sum(hdu.data['VIS2ERR']>np.abs(data))
                     data[hdu.data['VIS2ERR']>0.5*np.abs(data)] = np.nan
@@ -818,20 +880,20 @@ class Open:
                         ep.append(tmp[1])
                     # -- each order:
                     for j in range(reducePoly+1):
-                        self._rawData.append(('v2_%d_%d;'%(j,reducePoly)+ins,
+                        self._rawData.append(['v2_%d_%d;'%(j,reducePoly)+ins,
                           hdu.data['UCOORD'],
                           hdu.data['VCOORD'],
                           self.wavel_3m[ins],
                           hdu.data['MJD'],
                           np.array([x['A'+str(j)] for x in p]),
-                          np.array([x['A'+str(j)] for x in ep])))
+                          np.array([x['A'+str(j)] for x in ep])])
 
-                self._rawData.append(('v2;'+ins,
+                self._rawData.append(['v2;'+ins,
                       hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
                       self.wavel[ins][None,:]+0*hdu.data['VCOORD'][:,None],
                       hdu.data['MJD'][:,None]+0*self.wavel[ins][None,:],
-                      data, err))
+                      data, err])
 
                 Bmax = (hdu.data['UCOORD']**2+hdu.data['VCOORD']**2).max()
                 Bmax = np.sqrt(Bmax)
@@ -858,7 +920,7 @@ class Open:
 
         # -- delta for approximation, very long!
         for r in self._rawData:
-            if r[0].split(';')[0] in ['cp', 't3']:
+            if r[0].split(';')[0] in ['cp', 't3', 'icp']:
                 # -- this will contain the delta for this r
                 vis1, vis2, vis3 = np.zeros(r[-2].shape), np.zeros(r[-2].shape), np.zeros(r[-2].shape)
                 for i in range(r[-2].shape[0]):
@@ -1023,7 +1085,7 @@ class Open:
                 o = np.random.rand()*2*np.pi
                 tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                           'y':np.sin(o)*(self.rmax+self.rmin),
-                          'f':1.0, 'diam*':self.diam}
+                          'f':1.0, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
                 params.append((tmp,self._chi2Data, self.observables))
@@ -1046,7 +1108,7 @@ class Open:
             for j,y in enumerate(allY):
                 if self.mapChi2[j,i]==0:
                     params = {'x':x, 'y':y, 'f':fratio, 'diam*':self.diam,
-                              '_i':i, '_j':j,}
+                              '_i':i, '_j':j, 'alpha*':self.alpha}
                     for _k in self.dwavel.keys():
                         params['dwavel;'+_k] = self.dwavel[_k]
 
@@ -1153,10 +1215,13 @@ class Open:
         # except:
         #     print '!!! I expect a dict!'
         return
-    def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None, removeCompanion=None, rmin=None,rmax=None, fratio=2.0, diam=None, diamc=None, doNotFit=None):
+    def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None,
+               removeCompanion=None, rmin=None,rmax=None, fratio=2.0, diam=None,
+               diamc=None, doNotFit=None):
         """
         - filename: a standard OIFITS data file
-        - observables = ['cp', 'v2', 't3'] list of observables to take into account in the file. Default is all
+        - observables = ['cp', 'scp', 'ccp', 'v2', 't3'] list of observables to take
+            into account in the file. Default is all
         - N: starts fits on a NxN grid
         - rmax: size of the grid in mas (20 will search between -20mas to +20mas)
         - rmin: do not look into the inner radius, in mas
@@ -1215,7 +1280,7 @@ class Open:
                 o = np.random.rand()*2*np.pi
                 tmp = {'x':np.cos(o)*(self.rmax+self.rmin),
                           'y':np.sin(o)*(self.rmax+self.rmin),
-                          'f':fratio, 'diam*':self.diam}
+                          'f':fratio, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
                 params.append((tmp, self._chi2Data, self.observables))
@@ -1238,9 +1303,11 @@ class Open:
             for x in X:
                 if x**2+y**2>=self.rmin**2 and x**2+y**2<=self.rmax**2:
                     tmp={'diam*': self.diam if diam is None else diam,
-                        'f':fratio, 'x':x, 'y':y, '_k':k}
+                        'f':fratio, 'x':x, 'y':y, '_k':k, 'alpha*':self.alpha}
                     for _k in self.dwavel.keys():
                         tmp['dwavel;'+_k] = self.dwavel[_k]
+                    if not diamc is None:
+                        tmp['diamc'] = diamc
                     _doNotFit=[]
                     # if not diam is None:
                     #     _doNotFit.append('diam*')
@@ -1327,7 +1394,9 @@ class Open:
             print '--> %4.2fmas should be enough'%(2.*self.rmax/float(self.Nopt))
             reliability = 'overkill'
         else:
-            print ' | Grid has the correct steps of %4.2fmas, optimimum step size found to be %4.2fmas'%(step, 2.*self.rmax/float(self.Nopt))
+            print ' | Grid has the correct steps of %4.2fmas, \
+                    optimimum step size found to be %4.2fmas'%(step,
+                                            2.*self.rmax/float(self.Nopt))
             reliability = 'reliable'
 
         # == plot chi2 min map:
@@ -1498,7 +1567,8 @@ class Open:
                 print ' | %5s='%s, '%8.4f +- %6.4f %s'%(fit['best'][s], fit['uncer'][s], paramUnits(s))
         return
 
-    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True, monteCarlo=False, corrSpecCha=None, nSigmaClip=3.5):
+    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True,
+                monteCarlo=False, corrSpecCha=None, nSigmaClip=3.5):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap. It can also been entered
@@ -1573,10 +1643,11 @@ class Open:
         if len(mjds)<3 and useMJD:
             print ' | Warning: not enough dates to bootstrap on them!'
             useMJD=False
-        if useMJD:
-            x = {j:np.random.rand() for j in mjds}
 
         for i in range(N):
+            if useMJD:
+                x = {j:np.random.rand() for j in mjds}
+                #print i, x
             tmp = {k:param[k] for k in param.keys()}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
@@ -1587,7 +1658,7 @@ class Open:
             tmp['_k'] = i
             data = []
             for d in self._chi2Data:
-                data.append(list(d))
+                data.append(list(d)) # recreate a list of data
                 if monteCarlo:
                     # -- Monte Carlo noise ----------------------------------------------------------
                     if corrSpecCha is None:
@@ -1599,19 +1670,22 @@ class Open:
                     # -- Bootstrapping: set 'fracIgnored'% of the data to Nan (ignored)
                     if useMJD:
                         mjd = set(d[-3].flatten())
-                        mask = d[-1]*0 + 1
+                        mask = d[-1]*0 + 1.0
                         for j in mjd:
-                            if x[j]<=1./len(mjds) :
+                            if x[j]<=1/3.: # reject some MJDs
                                 mask[d[-3]==j] = np.nan # ignored
+                            if x[j]>=2/3.: # count some MJDs twice
+                                mask[d[-3]==j] = 2. # ignored
+
                         # -- weight the error bars
                         data[-1][-1] = data[-1][-1]/mask
-                    fracIgnored = 1/3. # fraction of proba 0 and proba 2. DO NOT CHANGE!!!
+
                     mask = np.random.rand(d[-1].shape[1])
-                    mask = np.float_(mask>=fracIgnored) # ignored some points
-                    mask[mask==1] *= 1 + (np.random.rand(int(np.sum(mask)))<=fracIgnored) # points seen twice
+                    mask = np.float_(mask>=1/3.) + np.float_(mask>=2/3)
                     mask[mask==0] += np.nan
                     # -- weight the error bars
                     data[-1][-1] = data[-1][-1]/mask[None,:]
+
             if p is None:
                 # -- single thread:
                 self._cb_fitFunc(_fitFunc(tmp, data, self.observables, fitAlso, doNotFit))
@@ -1730,7 +1804,7 @@ class Open:
                     res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
-        return
+        return res
         # -_-_-
     def plotModel(self, param=None, fig=3):
         """
@@ -1739,6 +1813,7 @@ class Open:
         if param is None:
             try:
                 param = self.bestFit['best']
+                #print param
             except:
                 print ' > ERROR: please set param= do the initial conditions (or run fitMap)'
                 print " | param={'x':, 'y':, 'f':, 'diam*':}"
@@ -1754,26 +1829,39 @@ class Open:
         for _k in self.dwavel.keys():
             param['dwavel;'+_k] = self.dwavel[_k]
 
-        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData, self.observables)
+        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
+                                                            self.observables)
         _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in self.observables, self._rawData), param)
         plt.close(fig)
         plt.figure(fig, figsize=(11,8))
         plt.clf()
         N = len(set(_types))
         for i,t in enumerate(set(_types)):
+            plotMod = False
             w = np.where((_types==t)*(1-np.isnan(_meas)))
             ax1 = plt.subplot(2,N,i+1)
             plt.title(t.split(';')[1])
             plt.ylabel(t.split(';')[0])
+            if any(np.iscomplex(_meas[w])):
+                _meas[w] = np.angle(_meas[w])
+                _mod[w] = np.angle(_mod[w])
+                plotMod = True
             plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
                          color='k', alpha=0.2)
             plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='gist_rainbow_r', alpha=0.5)
             plt.plot(_uv[w], _mod[w], '.k', alpha=0.2)
+            if plotMod:
+                plt.plot(_uv[w], _mod[w]+2*np.pi, '.k', alpha=0.1)
+                plt.plot(_uv[w], _mod[w]-2*np.pi, '.k', alpha=0.1)
+                plt.ylim(-np.max(np.abs(_meas[w]+_errs[w])),
+                          np.max(np.abs(_meas[w]+_errs[w])))
+
             plt.subplot(2,N,i+1+N, sharex=ax1)
             plt.plot(_uv[w], (_meas[w]-_mod[w])/_errs[w], '.k', alpha=0.5)
             plt.xlabel('B/$\lambda$')
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
+
         #print _meas.shape, _mod.shape
         return
     def _cb_nsigmaFunc(self, r):
@@ -1795,7 +1883,8 @@ class Open:
         except:
             print 'did not work'
         return
-    def detectionLimit(self, step=None, diam=None, fig=4, addCompanion=None, removeCompanion=None, drawMaps=True, rmax=None):
+    def detectionLimit(self, step=None, diam=None, fig=4, addCompanion=None,
+                        removeCompanion=None, drawMaps=True, rmax=None):
         """
         step: number of steps N in the map (map will be NxN)
         drawMaps: display the detection maps in addition to the radial profile (default)
@@ -1833,12 +1922,11 @@ class Open:
             Ntest = 2*max(multiprocessing.cpu_count()-1,1)
             params = []
             for k in range (Ntest):
-                tmp = {'x':10*np.random.rand(),
-                               'y':10*np.random.rand(),
-                               'f':1.0, 'diam*':self.diam}
+                tmp = {'x':10*np.random.rand(), 'y':10*np.random.rand(),
+                       'f':1.0, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
-                params.append(tmp)
+                params.append((tmp, self._chi2Data, self.observables, self._delta))
             # -- Absil is twice as fast as injection
             est = 1.5*self._estimateRunTime(_detectLimit, params)
             est *= N**2
@@ -1871,7 +1959,7 @@ class Open:
                 for j,y in enumerate(allY):
                     if self.f3s[j,i]==0:
                         params = {'x':x, 'y':y, 'f':1.0, 'diam*':self.diam,
-                                  '_i':i, '_j':j}
+                                  '_i':i, '_j':j, 'alpha*':self.alpha}
                         for _k in self.dwavel.keys():
                             params['dwavel;'+_k] = self.dwavel[_k]
                         if p is None:
@@ -1985,7 +2073,9 @@ def sliding_percentile(x, y, dx, percentile=50, smooth=True):
     else:
         return res
 
-def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False, doNotFit=[], epsfcn=1e-6, ftol=1e-5, fullOutput=True, normalizedUncer=True, follow=None):
+def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
+                        doNotFit=[], epsfcn=1e-6, ftol=1e-5, fullOutput=True,
+                        normalizedUncer=True, follow=None):
     """
     - params is a Dict containing the first guess.
 
@@ -2060,7 +2150,7 @@ def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
     try:
         chi2 = (np.array(tmp)**2).sum()
     except:
-        chi2=0.0
+        chi2 = 0.0
         for x in tmp:
             chi2+=np.sum(x**2)
     reducedChi2 = chi2/float(np.sum([1 if np.isscalar(i) else
@@ -2160,7 +2250,8 @@ def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
               'info':info, 'cor':cor}
     return pfix
 
-def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose=False, follow=None):
+def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None,
+                    verbose=False, follow=None):
     """
     interface to leastsq from scipy:
     - x,y,err are the data to fit: f(x) = y +- err
@@ -2191,7 +2282,7 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
     if type(y)==np.ndarray and type(err)==np.ndarray:
         # -- assumes y and err are a numpy array
         y = np.array(y)
-        res = ((func(x,params)-y)/err).flatten()
+        res = (np.abs(func(x,params)-y)/err).flatten()
         # -- avoid NaN! -> make them 0's
         res = np.nan_to_num(res)
     else:
@@ -2200,7 +2291,8 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
         res = []
         tmp = func(x,params)
         for k in range(len(y)):
-            df = (np.array(tmp[k])-np.array(y[k]))/np.array(err[k])
+            # -- abs to deal with complex number
+            df = np.abs(np.array(tmp[k])-np.array(y[k]))/np.array(err[k])
             # -- avoid NaN! -> make them 0's
             df = np.nan_to_num(df)
             try:
@@ -2242,7 +2334,9 @@ def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None, verbose
 
 def _dpfit_ramdomParam(fit, N=1):
     """
-    get a set of randomized parameters (list of dictionnaries) around the best fited value, using a gaussian probability, taking into account the correlations from the covariance matrix.
+    get a set of randomized parameters (list of dictionnaries) around the best
+    fited value, using a gaussian probability, taking into account the
+    correlations from the covariance matrix.
 
     fit is the result of leastsqFit (dictionnary)
     """
@@ -2364,5 +2458,3 @@ class pca():
         """
         return self.coef[:,i][:,np.newaxis]*\
                self.base[:,i][np.newaxis,:]
-
-
