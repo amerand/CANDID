@@ -30,7 +30,8 @@ import os
 #__version__ = '0.6 | 2015/02/10' # bug fix in smearing
 #__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
 #__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
-__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
+#__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
+__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
 
 """
 # --------------------
