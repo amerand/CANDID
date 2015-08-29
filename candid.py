@@ -365,7 +365,7 @@ def _injectCompanionData(data, delta, param):
     global CONFIG
     res = [[x if isinstance(x, str) else x.copy() for x in d] for d in data] # copy the data
     c = np.pi/180/3600000.*1e6
-    for i,d in enumerate(res):
+    for i,d in enumerate(res): # -- for each data block
         if 'dwavel' in param:
             dwavel = param['dwavel']
         elif 'dwavel;'+d[0].split(';')[1] in param:
@@ -409,7 +409,7 @@ def _injectCompanionData(data, delta, param):
             if d[0].split(';')[0]=='cp':
                 d[-2] -= np.angle(tmp)
             if d[0].split(';')[0]=='icp':
-                d[-2] = np.exp(1j*(np.angle(d[-2]-np.angle(tmp))))
+                d[-2] = np.exp(1j*(np.angle(d[-2])-np.angle(tmp)))
             else: # t3
                 d[-2] *= np.abs(tmp) /(1+param['f']/100.)**3
     return res
