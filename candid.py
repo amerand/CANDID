@@ -31,7 +31,9 @@ import os
 #__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
 #__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
 #__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
-__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
+#__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
+__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
+
 
 """
 # --------------------
@@ -2043,15 +2045,34 @@ class Open:
         for k in r_f3s.keys():
             r_f3s[k] = r_f3s[k][(r<self.rmax)*(r>self.rmin)]
         r = r[(r<self.rmax)*(r>self.rmin)]
-        plt.plot(r, sliding_percentile(r, r_f3s['Absil'],
-                  self.rmax/float(N), 90),
-                '-r', linewidth=3, alpha=0.5, label='Absil 90%')
-        plt.plot(r, sliding_percentile(r, r_f3s['injection'],
-                  self.rmax/float(N), 90),
-                '-b', linewidth=3, alpha=0.5, label='injection 90%')
+        if True: # -- plot in magnitudes:
+            # plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['Absil'],
+            #         self.rmax/float(N), 90)/100.),
+            #         '-r', linewidth=3, alpha=0.5, label='Absil (90%)')
+            plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['Absil'],
+                    self.rmax/float(N), 99)/100.),
+                    '-r', linewidth=3, alpha=0.5, label='Absil (99%)')
+            # plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['injection'],
+            #         self.rmax/float(N), 90)/100.),
+            #         '-b', linewidth=3, alpha=0.5, label='Analytical injection (90%)')
+            plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['injection'],
+                    self.rmax/float(N), 99)/100.),
+                    '-b', linewidth=3, alpha=0.5, label='Analytical injection (99%)')
+
+
+            plt.ylabel('$\Delta \mathrm{Mag}_{3\sigma}$')
+            plt.ylim(plt.ylim()[1], plt.ylim()[0]) # -- rreverse plot
+        else: # -- plot in %
+            plt.plot(r, sliding_percentile(r, r_f3s['Absil'],
+                      self.rmax/float(N), 90),
+                    '-r', linewidth=3, alpha=0.5, label='Absil 90%')
+            plt.plot(r, sliding_percentile(r, r_f3s['injection'],
+                      self.rmax/float(N), 90),
+                    '-b', linewidth=3, alpha=0.5, label='Analytical injection 90%')
+            plt.ylabel('f$_{3\sigma}$ (%)')
+
         plt.legend()
         plt.xlabel('radial distance (mas)')
-        plt.ylabel('f$_{3\sigma}$ (%)')
         plt.grid()
         # -- store radial profile of detection limit:
         self.f3s = {'r(mas)':r,
