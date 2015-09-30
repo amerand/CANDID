@@ -35,7 +35,9 @@ import sys
 #__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
 #__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
 #__version__ = '0.12 | 2015/09/17' # takes list of files; bestFit cannot be out rmin/rmax
-__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
+#__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
+__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
+
 
 """
 # --------------------
@@ -600,7 +602,8 @@ class Open:
 
         print ' > compute aux data for companion injection'
         self._compute_delta()
-        self.estimateCorrSpecChannels()
+        #self.estimateCorrSpecChannels()
+
         # -- all MJDs in the files:
         mjds = []
         for d in self._rawData:
@@ -647,7 +650,13 @@ class Open:
         """
         # -- fit diameter if possible
         if not forcedDiam is None:
-            self.diam = forcedDiam
+            if isinstance(forcedDiam, float) or \
+                isinstance(forcedDiam, int):
+                self.diam = forcedDiam
+            else:
+                print ' | WARNING: assume unresolved diam=0.0mas'
+                print ' |          forceDiam= should be the fixed value'
+                self.diam = 0.0
 
         if forcedDiam is None and \
             ('v2' in self.observables or 't3' in self.observables) and\
@@ -673,13 +682,13 @@ class Open:
             if self.alpha == 0:
                 print ' | Chi2 UD for diam=%4.3fmas'%self.diam
             else:
-                print ' | Chi2 LD for diam=%4.3fmas, alpha=%4.3f'%(self.diam,
-                                                                )
+                print ' | Chi2 LD for diam=%4.3fmas, alpha=%4.3f'%self.diam
 
-            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0, 'alpha*':self.alpha}
+            tmp = {'x':0, 'y':0, 'f':0, 'diam*':self.diam, 'alpha*':self.alpha}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
+            print tmp
             self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables)
             self.ediam = np.nan
             print ' |  chi2 = %4.3f'%self.chi2_UD
@@ -1277,7 +1286,16 @@ class Open:
             print 'found injected companion at', self._dataheader
 
         print ' > Preliminary analysis'
-        self.fitUD()
+        if not diam is None or \
+                (isinstance(doNotFit, list) and 'diam*' in doNotFit):
+            if not diam is None:
+                self.diam = diam
+            else:
+                diam = 0.0
+            self.fitUD(forcedDiam=diam)
+        else:
+            self.fitUD()
+
         X = np.linspace(-self.rmax, self.rmax, N)
         Y = np.linspace(-self.rmax, self.rmax, N)
         self.allFits, self._prog = [{} for k in range(N*N)], 0.0
@@ -1323,11 +1341,11 @@ class Open:
                     if not diamc is None:
                         tmp['diamc'] = diamc
                     _doNotFit=[]
-                    # if not diam is None:
-                    #     _doNotFit.append('diam*')
-                    # if not diamc is None:
-                    #     _doNotFit.append('diamc')
-                    #     tmp['diamc'] = diamc
+                    if not diam is None:
+                        _doNotFit.append('diam*')
+                    if not diamc is None:
+                        _doNotFit.append('diamc')
+                        tmp['diamc'] = diamc
                     if not doNotFit is None:
                         _doNotFit.extend(doNotFit)
 
@@ -1370,7 +1388,6 @@ class Open:
                             tmp += (f['best'][k]-a['best'][k])**2/(0.1*self.minSpatialScale)**2
                         else: # -- for x and y
                             tmp += (f['best'][k]-a['best'][k])**2/(0.5*self.minSpatialScale)**2
-
                         n += 1.
                 tmp /= n
                 chi2.append(tmp)
@@ -1383,7 +1400,6 @@ class Open:
                     allMin[-1]['best']['f'] = np.abs(allMin[-1]['best']['f'])
                 except:
                     pass
-
 
         # -- plot histogram of distance from start to end of fit:
         if False:
@@ -1409,7 +1425,8 @@ class Open:
                                 np.percentile([f['dist'] for f in self.allFits], 50),
                                 np.percentile([f['dist'] for f in self.allFits], 90),)
 
-        self.Nopt = max(np.sqrt(2*len(allMin)), self.rmax/np.median([f['dist'] for f in self.allFits])*np.sqrt(2))
+        self.Nopt = self.rmax/np.nanmedian([f['dist'] for f in self.allFits])*np.sqrt(2)
+        self.Nopt = max(np.sqrt(2*len(allMin)), self.Nopt)
         self.Nopt = int(np.ceil(self.Nopt))
         self.stepOptFitMap = 2*self.rmax/self.Nopt
         if len(allMin)/float(N*N)>0.6 or\
@@ -1469,7 +1486,7 @@ class Open:
         title += '\n'+self.titleFilename
         if not removeCompanion is None:
             title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
-                    removeCompanion['x'], removeCompanion['y'], 100*removeCompanion['f'])
+                    removeCompanion['x'], removeCompanion['y'], removeCompanion['f'])
         if CONFIG['suptitle']:
             plt.suptitle(title, fontsize=14, fontweight='bold')
 
@@ -1777,7 +1794,6 @@ class Open:
                      )
         print ' | %d fits ignored'%(len(x)-len(w[0]))
 
-
         ax = {}
         res['boot']={}
         for i1,k1 in enumerate(kz):
@@ -1872,9 +1888,10 @@ class Open:
         for _k in self.dwavel.keys():
             param['dwavel;'+_k] = self.dwavel[_k]
 
-        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
+        _meas, _errs, _uv, _types, _wl = _generateFitData(self._chi2Data,
                                                             self.observables)
-        _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in self.observables, self._rawData), param)
+        _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in
+                        self.observables, self._chi2Data), param)
         plt.close(fig)
         plt.figure(fig, figsize=(11,8))
         plt.clf()
@@ -1965,6 +1982,7 @@ class Open:
             self._chi2Data = _injectCompanionData(self._rawData, self._delta, tmp)
         else:
             self._chi2Data = self._rawData
+
         self.fitUD(diam)
 
         print ' > Detection Limit Map %dx%d'%(N,N),
@@ -2035,7 +2053,7 @@ class Open:
         #print 'it actually took %4.1f seconds'%(time.time()-t0)
         X, Y = np.meshgrid(allX, allY)
         vmin=min([np.min(self.allf3s[m]) for m in methods]),
-        vmax=min([np.max(self.allf3s[m]) for m in methods]),
+        vmax=max([np.max(self.allf3s[m]) for m in methods]),
 
         if drawMaps:
             # -- draw the detection maps
@@ -2054,7 +2072,8 @@ class Open:
                 title += '\n'+self.titleFilename
                 if not removeCompanion is None:
                     title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
-                            removeCompanion['x'], removeCompanion['y'], removeCompanion['f'])
+                            removeCompanion['x'], removeCompanion['y'],
+                            removeCompanion['f'])
 
                 plt.suptitle(title, fontsize=14, fontweight='bold')
             else:
