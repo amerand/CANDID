@@ -21,6 +21,7 @@ import scipy.interpolate
 import scipy.stats
 import multiprocessing
 import os
+import sys
 
 #__version__ = '0.1 | 2014/11/25'
 #__version__ = '0.2 | 2015/01/07' # big clean
@@ -32,8 +33,9 @@ import os
 #__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
 #__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
 #__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
-__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
-
+#__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
+#__version__ = '0.12 | 2015/09/17' # takes list of files; bestFit cannot be out rmin/rmax
+__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
 
 """
 # --------------------
@@ -50,15 +52,15 @@ axcir.fitMap(fig=2)
 
 # -- save best fitted companion for later use
 p = axcir.bestFit['best']
-p = {'dwavel;PIONIER_Pnat(1.6135391/1.7698610)': 0.156, 'f': 0.9395, 'y': -28.53, 'x': 6.24, 'diam*': 0.816}
+
+# this is actually: p = {'f': 0.9395, 'y': -28.53, 'x': 6.24, 'diam*': 0.816}
 
 # -- bootstrapping error bars around best companion
-axcir.fitBoot(param=p)
+axcir.fitBoot(param=p, fig=4)
 
 # -- detection limit
 axcir.detectionLimit(fig=5, removeCompanion=p)
 """
-
 
 print """
 ===================== This is CANDID ===================================
@@ -70,7 +72,7 @@ print ' | version:', __version__
 # -- some general parameters:
 CONFIG = {'default cmap':'cubehelix', # color map used
           'chi2 scale' : 'lin', # can be log
-          'longExecWarning': 180, # in seconds
+          'longExecWarning': 300, # in seconds
           'suptitle':True, # display over head title
           'progress bar': True,
           'Ncores': None # default is to use N-1 Cores
@@ -180,6 +182,7 @@ def _Vbin(uv, param):
     'wavel': in um
     'x, y': in mas
     'f': flux ratio in % -> takes the absolute value
+
     """
     if 'f' in param.keys():
         f = np.abs(param['f'])/100.
@@ -216,6 +219,8 @@ def _modelObservables(obs, param):
     """
     model observables contained in "obs".
     param -> see _Vbin
+
+    --> will force the contrast ratio to be positive!
 
     Observations are entered as:
     obs = [('v2;ins', u, v, wavel, ...),
@@ -483,13 +488,12 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
     """
     Returns the flux ratio (in %) for which the chi2 ratio between binary and UD is 3 sigmas.
 
-    Uses the postion and diameter given in "Param" and only varies the flux ratio
+    Uses the position and diameter given in "Param" and only varies the flux ratio
 
     - method=="Absil", uses chi2_BIN/chi2_UD, assuming chi2_UD is the best model
     - otherwise, uses chi2_UD/chi2_BIN, after injecting a companion
     """
-    if method!='Absil':
-        method = 'injection'
+
     fr, nsigma = [], []
     mult = 1.4
     cond = True
@@ -504,7 +508,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
         if method=='Absil':
             fr.append(param['f'])
             nsigma.append(_nSigmas(_chi2Func(param, chi2Data, observables)[-1], chi2_0, ndata))
-        else:
+        elif method=='injection':
             fr.append(param['f'])
             data = _injectCompanionData([chi2Data[k] for k in range(len(chi2Data))
                                                 if chi2Data[k][0].split(';')[0]  in observables],
@@ -519,14 +523,12 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
             nsigma.append(_nSigmas(a, b, ndata))
 
         # -- Newton method:
-        #print nsigma[-1]
         if len(fr)==1:
             if nsigma[-1]<3:
                 param['f'] *= mult
             else:
                 param['f'] /= mult
         else:
-            #print 'DEBUG', mult, fr[-2:], nsigma[-2:], param['f']
             if nsigma[-1]<3 and nsigma[-2]<3:
                 param['f'] *= mult
             elif nsigma[-1]>=3 and nsigma[-2]>=3:
@@ -552,11 +554,9 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
     else:
         return np.interp(3, nsigma, fr)
 
-
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-
     def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None, wlOffset=0.0):
         """
         - filename: an OIFITS file
@@ -568,7 +568,17 @@ class Open:
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
         self.wlOffset = wlOffset # mainly to correct AMBER poor wavelength calibration...
-        if os.path.isdir(filename):
+        if isinstance(filename, list):
+            self._initOiData()
+            for i,f in enumerate(filename):
+                print ' > file %d/%d: %s'%(i+1, len(filename), f)
+                #try:
+                self._loadOifitsData(f, reducePoly=reducePoly)
+                #except:
+                #    print '   -> ERROR! could not read', f
+            self.filename = filename
+            self.titleFilename = '\n'.join([os.path.basename(f) for f in filename])
+        elif os.path.isdir(filename):
             print ' > loading FITS files in ', filename
             files = os.listdir(filename)
             files = filter(lambda x: ('.fit' in x.lower()) or ('.oifits' in x.lower()), files)
@@ -585,7 +595,6 @@ class Open:
             print ' > loading file', filename
             self.filename = filename
             self.titleFilename = os.path.basename(filename)
-
             self._initOiData()
             self._loadOifitsData(filename, reducePoly=reducePoly)
 
@@ -610,12 +619,12 @@ class Open:
         self.rmin = rmin
         if self.rmin is None:
             self.rmin = self.minSpatialScale
-            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%self.rmin
+            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%(self.rmin)
 
         self.rmax = rmax
         if self.rmax is None:
-            self.rmax = self.smearFov
-            print " | rmax= not given, set to Field of View: rmax=%5.2f mas"%self.rmax
+            self.rmax = 1.5*self.smearFov
+            print " | rmax= not given, set to 1.5*Field of View: rmax=%5.2f mas"%(self.rmax)
         self.diam = None
         self.bestFit = None
         self.alpha=0.0
@@ -661,11 +670,11 @@ class Open:
             print ' | chi2 = %4.3f'%self.chi2_UD
         elif not self.diam is None:
             print ' > single star CHI2 (no fit!)'
-            if self.alpha==0:
+            if self.alpha == 0:
                 print ' | Chi2 UD for diam=%4.3fmas'%self.diam
             else:
                 print ' | Chi2 LD for diam=%4.3fmas, alpha=%4.3f'%(self.diam,
-                                                                self.alpha)
+                                                                )
 
             tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0, 'alpha*':self.alpha}
             for _k in self.dwavel.keys():
@@ -688,9 +697,9 @@ class Open:
         self.wavel_3m = {} # -- min, mean, max
         self.telArray = {}
         self._rawData, self._delta = [], []
-        self.smearFov = 1e3 # bandwidth smearing FoV, in mas
-        self.diffFov = 1e3 # diffraction FoV, in mas
-        self.minSpatialScale = 1e3
+        self.smearFov = 5e3 # bandwidth smearing FoV, in mas
+        self.diffFov = 5e3 # diffraction FoV, in mas
+        self.minSpatialScale = 5e3
         self._delta = []
         return
     def _loadOifitsData(self, filename, reducePoly=None):
@@ -1028,6 +1037,7 @@ class Open:
         except:
             print 'did not work'
         return
+
     def chi2Map(self, step=None, fratio=None, addCompanion=None, removeCompanion=None, fig=0, diam=None, rmin=None, rmax=None):
         """
         Performs a chi2 map between rmin and rmax (should be defined) with step
@@ -1099,7 +1109,8 @@ class Open:
                  est>CONFIG['longExecWarning']:
                 print " > WARNING: this will take too long. "
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
-                print " | set it to 'None' and the warning will disapear... at your own risks!"
+                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
+                print " | set it to None and the warning will disapear... at your own risks!"
                 return
         print ''
         # -- done estimating time
@@ -1219,7 +1230,7 @@ class Open:
         #     print '!!! I expect a dict!'
         return
     def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None,
-               removeCompanion=None, rmin=None,rmax=None, fratio=2.0, diam=None,
+               removeCompanion=None, rmin=None, rmax=None, fratio=2.0, diam=None,
                diamc=None, doNotFit=None):
         """
         - filename: a standard OIFITS data file
@@ -1267,7 +1278,6 @@ class Open:
 
         print ' > Preliminary analysis'
         self.fitUD()
-
         X = np.linspace(-self.rmax, self.rmax, N)
         Y = np.linspace(-self.rmax, self.rmax, N)
         self.allFits, self._prog = [{} for k in range(N*N)], 0.0
@@ -1294,6 +1304,7 @@ class Open:
                  est>CONFIG['longExecWarning']:
                 print " > WARNING: this will take too long. "
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
         print ''
@@ -1319,6 +1330,7 @@ class Open:
                     #     tmp['diamc'] = diamc
                     if not doNotFit is None:
                         _doNotFit.extend(doNotFit)
+
                     params.append(tmp)
                     if p is None:
                         # -- single thread:
@@ -1331,7 +1343,6 @@ class Open:
         if not p is None:
             p.close()
             p.join()
-        #print 'it actually took %4.1fs'%(time.time()-t0)
 
         print ' | Computing map of interpolated Chi2 minima'
         self.allFits = self.allFits[:k-1]
@@ -1345,20 +1356,34 @@ class Open:
 
         # -- count number of unique minima, start with first one, add N sigma:
         allMin = [self.allFits[0]]
-        allMin[-1]['nsigma'] =  _nSigmas(self.chi2_UD,  allMin[-1]['chi2'], self.ndata()-1)
+        allMin[0]['nsigma'] =  _nSigmas(self.chi2_UD,  allMin[0]['chi2'], self.ndata()-1)
         for f in self.allFits:
             chi2 = []
             for a in allMin:
                 tmp, n = 0., 0.
-                for k in ['x', 'y', 'f', 'diam*']:
-                    if f['uncer'][k]!=0 and a['uncer'][k]!=0:
-                        tmp += (f['best'][k]-a['best'][k])**2/(f['uncer'][k]**2+a['uncer'][k]**2)
+                for k in ['x', 'y', 'f', 'diam']:
+                    if k in f['uncer'].keys() and k in a['uncer'].keys() and\
+                            f['uncer'][k]!=0 and a['uncer'][k]!=0:
+                        if k == 'f':
+                            tmp += (f['best'][k]-a['best'][k])**2/(0.01)**2
+                        elif k == 'diam':
+                            tmp += (f['best'][k]-a['best'][k])**2/(0.1*self.minSpatialScale)**2
+                        else: # -- for x and y
+                            tmp += (f['best'][k]-a['best'][k])**2/(0.5*self.minSpatialScale)**2
+
                         n += 1.
                 tmp /= n
                 chi2.append(tmp)
-            if not any([c<=1 for c in chi2]):
+            if not any([c<=1 for c in chi2]) and \
+                    f['best']['x']**2+f['best']['y']**2>self.rmin**2 and \
+                    f['best']['x']**2+f['best']['y']**2<self.rmax**2:
                 allMin.append(f)
-                allMin[-1]['nsigma'] =  _nSigmas(self.chi2_UD,  allMin[-1]['chi2'], self.ndata()-1)
+                allMin[-1]['nsigma'] = _nSigmas(self.chi2_UD,  allMin[-1]['chi2'], self.ndata()-1)
+                try:
+                    allMin[-1]['best']['f'] = np.abs(allMin[-1]['best']['f'])
+                except:
+                    pass
+
 
         # -- plot histogram of distance from start to end of fit:
         if False:
@@ -1397,25 +1422,32 @@ class Open:
             print '--> %4.2fmas should be enough'%(2.*self.rmax/float(self.Nopt))
             reliability = 'overkill'
         else:
-            print ' | Grid has the correct steps of %4.2fmas, \
-                    optimimum step size found to be %4.2fmas'%(step,
-                                            2.*self.rmax/float(self.Nopt))
+            print ' | Grid has the correct steps of %4.2fmas, '%step,
+            print 'optimimum step size found to be %4.2fmas'%(
+                2.*self.rmax/float(self.Nopt))
             reliability = 'reliable'
 
         # == plot chi2 min map:
-        _X, _Y = np.meshgrid(np.linspace(X[0]-np.diff(X)[0]/2.,
-                                         X[-1]+np.diff(X)[0]/2.,
-                                         2*len(X)+1),
-                             np.linspace(Y[0]-np.diff(Y)[0]/2.,
-                                         Y[-1]+np.diff(Y)[0]/2.,
-                                         2*len(Y)+1))
+        # -- limited in 32 but, hacking something dirty:
+        Nx = 2*len(X)+1
+        Ny = 2*len(Y)+1
+        if len(allMin)**2*Nx*Ny >= sys.maxsize:
+            Nx = int(np.sqrt(sys.maxsize/(len(allMin)**2)))-1
+            Ny = int(np.sqrt(sys.maxsize/(len(allMin)**2)))-1
 
-        rbf = scipy.interpolate.Rbf([x['best']['x'] for x in self.allFits
-                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
-                                    [x['best']['y'] for x in self.allFits
-                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
-                                    [x['chi2'] for x in self.allFits
-                                        if x['best']['x']**2+x['best']['y']**2>self.rmin**2],
+        # print '### DEBUG:', sys.maxsize, len(allMin)**2*Nx*Ny,
+        # print len(allMin)**2*Nx*Ny < sys.maxsize
+
+        _X, _Y = np.meshgrid(np.linspace(X[0]-np.diff(X)[0]/2.,
+                                         X[-1]+np.diff(X)[0]/2., Nx),
+                             np.linspace(Y[0]-np.diff(Y)[0]/2.,
+                                         Y[-1]+np.diff(Y)[0]/2., Ny))
+        print ' | Rbf interpolating: %d points -> %d pixels map'%(len(allMin),
+                                                    Nx*Ny)
+
+        rbf = scipy.interpolate.Rbf([x['best']['x'] for x in allMin],
+                                    [x['best']['y'] for x in allMin],
+                                    [x['chi2'] for x in allMin],
                                     function='linear')
         _Z = rbf(_X, _Y)
         _Z[_X**2+_Y**2<self.rmin**2] = self.chi2_UD
@@ -1527,10 +1559,14 @@ class Open:
 
             # -- draw cross hair
             for ax in [ax1, ax2]:
-                ax.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
-                ax.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
-                ax.plot([x0-0.05*self.rmax, x0-0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
-                ax.plot([x0+0.05*self.rmax, x0+0.1*self.rmax], [y0, y0], '-r', alpha=0.5, linewidth=2)
+                ax.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r',
+                        alpha=0.5, linewidth=2)
+                ax.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r',
+                        alpha=0.5, linewidth=2)
+                ax.plot([x0-0.05*self.rmax, x0-0.1*self.rmax], [y0, y0], '-r',
+                        alpha=0.5, linewidth=2)
+                ax.plot([x0+0.05*self.rmax, x0+0.1*self.rmax], [y0, y0], '-r',
+                        alpha=0.5, linewidth=2)
             ax2.text(0.9*x0, 0.9*y0, r'%3.1f$\sigma$'%s0, color='r')
 
         plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
@@ -1543,6 +1579,9 @@ class Open:
         j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2])
         self.bestFit = [x for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
         self.bestFit['best'].pop('_k')
+        self.bestFit['nsigma'] = _nSigmas(self.chi2_UD,  self.bestFit['chi2'], self.ndata()-1)
+        self.plotModel(fig=fig+1)
+
 
         # -- compare with injected companion, if any
         if 'X' in self._dataheader.keys() and 'Y' in self._dataheader.keys() and 'F' in self._dataheader.keys():
@@ -1550,7 +1589,7 @@ class Open:
             print 'injected Y:', self._dataheader['Y'], 'found at %3.1f sigmas'%((y0-self._dataheader['Y'])/ey0)
             print 'injected F:', self._dataheader['F'], 'found at %3.1f sigmas'%((f0-self._dataheader['F'])/ef0)
             ax1.plot(self._dataheader['X'], self._dataheader['Y'], 'py', markersize=12, alpha=0.3)
-        self.plotModel(fig=fig+1)
+
         # -- do an additional fit by fitting also the bandwidth smearing
         if False:
             param = self.bestFit['best']
@@ -1626,6 +1665,7 @@ class Open:
                  est>CONFIG['longExecWarning']:
                 print " > WARNING: this will take too long. "
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
 
@@ -1887,7 +1927,8 @@ class Open:
             print 'did not work'
         return
     def detectionLimit(self, step=None, diam=None, fig=4, addCompanion=None,
-                        removeCompanion=None, drawMaps=True, rmax=None):
+                        removeCompanion=None, drawMaps=True, rmax=None,
+                        methods = ['Absil', 'injection']):
         """
         step: number of steps N in the map (map will be NxN)
         drawMaps: display the detection maps in addition to the radial profile (default)
@@ -1895,9 +1936,17 @@ class Open:
         Apart from the plots, the radial detection limits are stored in the dictionnary
         'self.f3s'.
         """
+        if isinstance(methods, str):
+            methods = [methods]
+        for method in methods:
+            # -- check known methods:
+            knownMethods = ['Absil', 'injection']
+            assert method in knownMethods, \
+                'unknowm detection limit method: '+method+'. known methods are '+str(knownMethods)
+
         if step is None:
-            step = 1/3. * self.minSpatialScale
-            print ' > step= not given, using 1/3 X smallest spatial scale = %4.2f mas'%step
+            step = 1/2. * self.minSpatialScale
+            print ' > step= not given, using 1/2 X smallest spatial scale = %4.2f mas'%step
         if not rmax is None:
             self.rmax = rmax
         try:
@@ -1938,8 +1987,11 @@ class Open:
                  est>CONFIG['longExecWarning']:
                 print " > WARNING: this will take too long. "
                 print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
+        else:
+            print ''
 
         #print 'estimated time:', est
         #t0 = time.time()
@@ -1948,7 +2000,7 @@ class Open:
         allX = np.linspace(-self.rmax, self.rmax, N)
         allY = np.linspace(-self.rmax, self.rmax, N)
         self.allf3s = {}
-        for method in ['Absil', 'injection']:
+        for method in methods:
             print " > Method:", method
             print ''
             self.f3s = np.zeros((N,N))
@@ -1979,12 +2031,12 @@ class Open:
             # -- take care of unfitted zone, for esthetics
             self.f3s[self.f3s<=0] = np.median(self.f3s[self.f3s>0])
             self.allf3s[method] = self.f3s.copy()
+
         #print 'it actually took %4.1f seconds'%(time.time()-t0)
         X, Y = np.meshgrid(allX, allY)
-        vmin=min(np.min(self.allf3s['Absil']),
-                        np.min(self.allf3s['injection']))
-        vmax=max(np.max(self.allf3s['Absil']),
-                            np.max(self.allf3s['injection']))
+        vmin=min([np.min(self.allf3s[m]) for m in methods]),
+        vmax=min([np.max(self.allf3s[m]) for m in methods]),
+
         if drawMaps:
             # -- draw the detection maps
             vmin, vmax = None, None
@@ -1993,7 +2045,7 @@ class Open:
                 plt.figure(fig, figsize=(11,10))
                 plt.subplots_adjust(top=0.85, bottom=0.08,
                                     left=0.08, right=0.97)
-                title = "CANDID: flux ratio (%%) for 3$\sigma$ detection, "
+                title = "CANDID: flux ratio for 3$\sigma$ detection, "
                 if self.ediam>0:
                     title += r'fitted $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
                 else:
@@ -2009,27 +2061,18 @@ class Open:
                 plt.figure(fig, figsize=(11,9))
                 plt.subplots_adjust(top=0.95, bottom=0.08,
                                     left=0.08, right=0.97)
-            ax1=plt.subplot(221)
-            plt.title("Absil's Method")
-            plt.pcolormesh(X, Y, self.allf3s['Absil'], cmap=CONFIG['default cmap'],
-                       vmin=vmin, vmax=vmax)
-            plt.colorbar()
-            plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
-            plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
-            plt.xlim(self.rmax, -self.rmax)
-            plt.ylim(-self.rmax, self.rmax)
-            ax1.set_aspect('equal', 'datalim')
+            for i,m in enumerate(methods):
+                ax1=plt.subplot(2, len(methods), i+1)
+                plt.title('Method: '+m)
+                plt.pcolormesh(X, Y, self.allf3s[m], cmap=CONFIG['default cmap'],
+                    vmin=vmin, vmax=vmax)
+                plt.colorbar()
+                plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+                plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
+                plt.xlim(self.rmax, -self.rmax)
+                plt.ylim(-self.rmax, self.rmax)
+                ax1.set_aspect('equal', 'datalim')
 
-            ax2=plt.subplot(222)
-            plt.title('Companion Injection Method')
-            plt.pcolor(X, Y, self.allf3s['injection'], cmap=CONFIG['default cmap'],
-                       vmin=vmin, vmax=vmax)
-            plt.colorbar()
-            plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
-            plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
-            plt.xlim(self.rmax, -self.rmax)
-            plt.ylim(-self.rmax, self.rmax)
-            ax2.set_aspect('equal', 'datalim')
             plt.subplot(212)
 
         else:
@@ -2045,42 +2088,28 @@ class Open:
         for k in r_f3s.keys():
             r_f3s[k] = r_f3s[k][(r<self.rmax)*(r>self.rmin)]
         r = r[(r<self.rmax)*(r>self.rmin)]
-        if True: # -- plot in magnitudes:
-            # plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['Absil'],
-            #         self.rmax/float(N), 90)/100.),
-            #         '-r', linewidth=3, alpha=0.5, label='Absil (90%)')
-            plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['Absil'],
-                    self.rmax/float(N), 99)/100.),
-                    '-r', linewidth=3, alpha=0.5, label='Absil (99%)')
-            # plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['injection'],
-            #         self.rmax/float(N), 90)/100.),
-            #         '-b', linewidth=3, alpha=0.5, label='Analytical injection (90%)')
-            plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s['injection'],
-                    self.rmax/float(N), 99)/100.),
-                    '-b', linewidth=3, alpha=0.5, label='Analytical injection (99%)')
+        self._detectLim = {'r': r}
+        for m in methods:
+            self._detectLim[m+'_99_M'] = -2.5*np.log10(sliding_percentile(r, r_f3s[m],
+                                    self.rmax/float(N), 99)/100.)
 
+        if True: # -- plot in magnitudes:
+            for m in methods:
+                plt.plot(r, -2.5*np.log10(sliding_percentile(r, r_f3s[m],
+                        self.rmax/float(N), 99)/100.),
+                        linewidth=3, alpha=0.5, label=m+' (99%)')
 
             plt.ylabel('$\Delta \mathrm{Mag}_{3\sigma}$')
             plt.ylim(plt.ylim()[1], plt.ylim()[0]) # -- rreverse plot
-        else: # -- plot in %
-            plt.plot(r, sliding_percentile(r, r_f3s['Absil'],
-                      self.rmax/float(N), 90),
-                    '-r', linewidth=3, alpha=0.5, label='Absil 90%')
-            plt.plot(r, sliding_percentile(r, r_f3s['injection'],
-                      self.rmax/float(N), 90),
-                    '-b', linewidth=3, alpha=0.5, label='Analytical injection 90%')
-            plt.ylabel('f$_{3\sigma}$ (%)')
+            plt.legend(loc='upper center')
 
-        plt.legend()
         plt.xlabel('radial distance (mas)')
         plt.grid()
         # -- store radial profile of detection limit:
-        self.f3s = {'r(mas)':r,
-                    'Absil':sliding_percentile(r, r_f3s['Absil'],
-                                                   self.rmax/float(N), 90),
-                    'Injection':sliding_percentile(r, r_f3s['injection'],
-                                                     self.rmax/float(N), 90),
-                  }
+        self.f3s = {'r(mas)':r}
+        for m in methods:
+            self.f3s[m] = sliding_percentile(r, r_f3s[m],
+                                                self.rmax/float(N), 90)
         return
 
 def sliding_percentile(x, y, dx, percentile=50, smooth=True):
