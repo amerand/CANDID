@@ -36,8 +36,8 @@ import sys
 #__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
 #__version__ = '0.12 | 2015/09/17' # takes list of files; bestFit cannot be out rmin/rmax
 #__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
-__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
-
+#__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
+__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
 
 """
 # --------------------
@@ -478,8 +478,9 @@ def _chi2Func(param, chi2Data, observables):
     res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))
     res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
     res[np.iscomplex(res)] = np.abs(res[np.iscomplex(res)])
-    res = res**2/_errs**2
-    res = np.real(np.mean(res))
+    res = np.abs(res)**2/_errs**2
+    res = np.nanmean(res)
+
     if '_i' in param.keys() and '_j' in param.keys():
         return param['_i'], param['_j'], res
     else:
@@ -496,20 +497,28 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
     - otherwise, uses chi2_UD/chi2_BIN, after injecting a companion
     """
 
-    fr, nsigma = [], []
+    fr, nsigma, chi2= [], [], []
     mult = 1.4
     cond = True
     if method=='Absil':
         tmp = {k:param[k] if k!='f' else 0.0 for k in param.keys()}
         # -- reference chi2 for UD
-        chi2_0 = _chi2Func(tmp, chi2Data, observables)[-1]
+        if '_i' in param.keys() or '_j' in param.keys():
+            chi2_0 = _chi2Func(tmp, chi2Data, observables)[-1]
+        else:
+            chi2_0 = _chi2Func(tmp, chi2Data, observables)
 
     ndata = np.sum([c[-1].size for c in chi2Data if c[0].split(';')[0] in observables])
     n = 0
     while cond:
         if method=='Absil':
             fr.append(param['f'])
-            nsigma.append(_nSigmas(_chi2Func(param, chi2Data, observables)[-1], chi2_0, ndata))
+            if '_i' in param.keys() or '_j' in param.keys():
+                chi2.append(_chi2Func(param, chi2Data, observables)[-1])
+            else:
+                chi2.append(_chi2Func(param, chi2Data, observables))
+            nsigma.append(_nSigmas(chi2[-1], chi2_0, ndata))
+
         elif method=='injection':
             fr.append(param['f'])
             data = _injectCompanionData([chi2Data[k] for k in range(len(chi2Data))
@@ -522,6 +531,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
                 a, b = _chi2Func(tmp, data, observables)[-1], _chi2Func(param, data, observables)[-1]
             else:
                 a, b = _chi2Func(tmp, data, observables), _chi2Func(param, data, observables)
+            chi2.append((a,b))
             nsigma.append(_nSigmas(a, b, ndata))
 
         # -- Newton method:
@@ -545,7 +555,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
         # -- stopping:
         if len(fr)>1 and any([s>3 for s in nsigma]) and any([s<3 for s in nsigma]):
             cond = False
-        if n>10:
+        if n>20:
             cond = False
 
     fr, nsigma = np.array(fr), np.array(nsigma)
@@ -559,7 +569,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None, wlOffset=0.0):
+    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None, wlOffset=0.0, alpha=0.0):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
@@ -630,7 +640,8 @@ class Open:
             print " | rmax= not given, set to 1.5*Field of View: rmax=%5.2f mas"%(self.rmax)
         self.diam = None
         self.bestFit = None
-        self.alpha=0.0
+
+        self.alpha=alpha
         #self.Ncores = Ncores
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
@@ -1945,7 +1956,7 @@ class Open:
         return
     def detectionLimit(self, step=None, diam=None, fig=4, addCompanion=None,
                         removeCompanion=None, drawMaps=True, rmax=None,
-                        methods = ['Absil', 'injection']):
+                        methods = ['Absil', 'injection'], fratio=1.):
         """
         step: number of steps N in the map (map will be NxN)
         drawMaps: display the detection maps in addition to the radial profile (default)
@@ -1993,7 +2004,7 @@ class Open:
             params = []
             for k in range (Ntest):
                 tmp = {'x':10*np.random.rand(), 'y':10*np.random.rand(),
-                       'f':1.0, 'diam*':self.diam, 'alpha*':self.alpha}
+                       'f':fratio, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
                 params.append((tmp, self._chi2Data, self.observables, self._delta))
@@ -2031,7 +2042,7 @@ class Open:
             for i,x in enumerate(allX):
                 for j,y in enumerate(allY):
                     if self.f3s[j,i]==0:
-                        params = {'x':x, 'y':y, 'f':1.0, 'diam*':self.diam,
+                        params = {'x':x, 'y':y, 'f':fratio, 'diam*':self.diam,
                                   '_i':i, '_j':j, 'alpha*':self.alpha}
                         for _k in self.dwavel.keys():
                             params['dwavel;'+_k] = self.dwavel[_k]
@@ -2464,7 +2475,6 @@ def _decomposeObs(wl, data, err, order=1, plot=False):
         plt.fill_between(_x, _ymin, _ymax, color='r', alpha=0.5)
     else:
         return fit['best'], fit['uncer']
-
 
 def _estimateCorrelation(data, errors, model):
     """
