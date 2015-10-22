@@ -19,6 +19,9 @@ import time
 import scipy.special
 import scipy.interpolate
 import scipy.stats
+from scipy import weave
+from scipy.weave import converters
+
 import multiprocessing
 import os
 import sys
@@ -37,7 +40,8 @@ import sys
 #__version__ = '0.12 | 2015/09/17' # takes list of files; bestFit cannot be out rmin/rmax
 #__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
 #__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
-__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
+#__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
+__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
 
 """
 # --------------------
@@ -162,7 +166,6 @@ def _Vud(base, diam, wavel):
     return 2*scipy.special.j1(x)/(x)
 
 def _Vld(base, diam, wavel, alpha=0.36):
-
     nu = alpha /2. + 1.
     diam *= np.pi/(180*3600.*1000)
     x = -1.*(np.pi*diam*base/wavel/1.e-6)**2/4.
@@ -173,7 +176,7 @@ def _Vld(base, diam, wavel, alpha=0.36):
              scipy.special.gamma(k_ + 1.) *x**k_
     return V_
 
-def _Vbin(uv, param):
+def _VbinSlow(uv, param):
     """
     Analytical complex visibility of a binary composed of a uniform
     disk diameter and an unresolved source. "param" is a dictionnary
@@ -215,7 +218,98 @@ def _Vbin(uv, param):
         c = 1.0
     res = (Vstar + c*f*Vcomp)/(1.0+f)
     return res
+#--
+def _VbinFast(uv, param):
+    """
+    using weave
+    uv = (u,v) where u,v a are ndarray
 
+    param MUST contain:
+    - diam*, x, y: in mas
+    - f: in %
+    - wavel, dwavel: in um
+    """
+    #print param.keys()
+    u, v = uv
+    s = u.shape
+    u, v = u.flatten(), v.flatten()
+    NU = len(u)
+    vr, vi = np.zeros(NU), np.zeros(NU)
+
+    diam = float(param['diam*'])
+    wavel = param['wavel']
+
+    if isinstance(wavel, np.ndarray):
+        wavel = wavel.flatten()
+    else:
+        wavel = np.ones(NU)*wavel
+
+    if 'x' in param.keys():
+        x = float(param['x'])
+    else:
+        x = 0.0
+
+    if 'x' in param.keys():
+        y = float(param['y'])
+    else:
+        y = 0.0
+    if 'f' in param.keys():
+        f = float(param['f'])
+    else:
+        f = 0.0
+
+    if 'dwavel' in param.keys():
+        dwavel = float(param['dwavel'])
+    else:
+        dwavel = 0.0
+    #print diam, x, y, f, wavel, dwavel
+    #print u.shape, v.shape, wavel.shape, vr.shape
+    code=\
+    """
+    int i;
+    double B, vis, X, pi, phi, c;
+    pi=3.1415926535;
+    f /= 100.;
+    c = 1.0;
+    for (i=0; i<NU; i++){
+        B = sqrt(u[i]*u[i] + v[i]*v[i]);
+        X = pi*0.004848136*B*diam/wavel[i];
+        // -- approximation of V_UD
+        vis = 1 - 0.125*X*X + 0.00520833*X*X*X*X -0.00010850694*X*X*X*X*X*X;
+        if (f>0) {
+        // -- companion 'phase'
+        phi = -2*pi*0.004848136*(u[i]*x + v[i]*y)/wavel[i];
+        // -- bandwidth smearing
+        if (dwavel >0) {
+            c = sin(phi*dwavel/wavel[i]/2.)/(phi*dwavel/wavel[i]/2.);
+            c = sqrt(c*c);
+        }
+        // -- result
+        vr[i] = (vis + c*f*cos(phi))/(1.0 + f);
+        vi[i] = (c*f*sin(phi))/(1.0 + f);
+        } else {
+        vr[i] = vis;
+        }
+
+    }
+    """
+    err = weave.inline(code, ['u','v','NU','diam','x','y','f',
+                              'wavel','dwavel','vr','vi'],
+                       compiler = 'gcc')
+    res = vr + 1j*vi
+    res = res.reshape(s)
+    return res
+
+def _Vbin(uv, param):
+    """
+    """
+    if not 'diamc' in param.keys() and \
+        not ('alpha' in param.keys() and param['alpha']>0):
+        return _VbinFast(uv, param)
+    else:
+        return _Vbin(uv, param)
+
+#_Vbin = _VbinSlow
 
 def _modelObservables(obs, param):
     """
@@ -362,7 +456,6 @@ def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
             res = 90.
     return res
 
-
 def _injectCompanionData(data, delta, param):
     """
     Inject analytically a companion defined as 'param' in the 'data' using
@@ -461,12 +554,21 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
     res = _dpfit_leastsqFit(_modelObservables,
                             filter(lambda c: c[0].split(';')[0] in observables, chi2Data),
                             param, _meas, _errs, fitOnly = fitOnly)
+    # if 'diam*' in res['uncer'].keys() and \
+    #         res['best']['diam*']< res['uncer']['diam*']:
+    #     fitOnly.remove('diam*')
+    #     res = _dpfit_leastsqFit(_modelObservables,
+    #                             filter(lambda c: c[0].split(';')[0] in observables,
+    #                             chi2Data), param, _meas, _errs, fitOnly = fitOnly)
+
     if '_k' in param.keys():
         res['_k'] = param['_k']
     if 'diam*' in res['best'].keys():
         res['best']['diam*'] = np.abs(res['best']['diam*'])
-    return res
+    if 'f' in res['best'].keys():
+        res['best']['f'] = np.abs(res['best']['f'])
 
+    return res
 
 def _chi2Func(param, chi2Data, observables):
     """
@@ -565,6 +667,38 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
         return param['_i'], param['_j'], np.interp(3, nsigma, fr)
     else:
         return np.interp(3, nsigma, fr)
+
+def _parallelRbf(x,y,z,X,Y):
+    """
+    parallelized implemetation of scipy.interpolate.Rbf:
+
+    return scipy.interpolate.Rbf(x,y,z)(X,Y)
+
+    DOES NOT WORK!!!
+    """
+    global CONFIG
+    if CONFIG['Ncores']==1:
+        return scipy.interpolate.Rbf(x,y,z,function='linear')(X,Y)
+    p = multiprocessing.Pool(CONFIG['Ncores'])
+    args = [(x,y,z,X[:,k::p._processes],Y[:,k::p._processes]) for k in range(p._processes)]
+    tmp = p.map(_Rbf, args)
+    res = np.zeros(X.shape)
+    for k in range(p._processes):
+        res[:,k::p._processes] = tmp[k]
+    p.close()
+    p.join()
+    return res
+
+def _Rbf(p):
+    """
+    p = (x,y,z,X,Y)
+    """
+    #import scipy.interpolate.Rbf as Rbf
+    print 'x=', p[0]
+    print 'y=', p[1]
+    print 'z=', p[2]
+    tmp = scipy.interpolate.Rbf(p[0],p[1],p[2],function='linear')(p[3],p[4])
+    return p[4]
 
 # == The main class
 class Open:
@@ -673,7 +807,7 @@ class Open:
             ('v2' in self.observables or 't3' in self.observables) and\
             ('v2' in [c[0].split(';')[0] for c in self._chi2Data] or
              't3' in [c[0].split(';')[0] for c in self._chi2Data]):
-            tmp = {'x':0, 'y':0, 'f':0, 'diam*':1.0, 'alpha*':self.alpha}
+            tmp = {'x':0.0, 'y':0.0, 'f':0.0, 'diam*':1.0, 'alpha*':self.alpha}
             if self.alpha>0:
                 print ' > LD diam Fit'
             else:
@@ -695,7 +829,7 @@ class Open:
             else:
                 print ' | Chi2 LD for diam=%4.3fmas, alpha=%4.3f'%self.diam
 
-            tmp = {'x':0, 'y':0, 'f':0, 'diam*':self.diam, 'alpha*':self.alpha}
+            tmp = {'x':0.0, 'y':0.0, 'f':0.0, 'diam*':self.diam, 'alpha*':self.alpha}
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
@@ -1098,7 +1232,9 @@ class Open:
         else:
             self._chi2Data = self._rawData
 
-        self.fitUD(forcedDiam=diam)
+        # -- NO! the fitUD should not fix the diameter, the binary fit should:
+        #self.fitUD(forcedDiam=diam)
+        self.fitUD()
 
         # -- prepare the grid
         allX = np.linspace(-self.rmax, self.rmax, N)
@@ -1297,15 +1433,18 @@ class Open:
             print 'found injected companion at', self._dataheader
 
         print ' > Preliminary analysis'
-        if not diam is None or \
-                (isinstance(doNotFit, list) and 'diam*' in doNotFit):
-            if not diam is None:
-                self.diam = diam
-            else:
-                diam = 0.0
-            self.fitUD(forcedDiam=diam)
-        else:
-            self.fitUD()
+        # -- NO, the fitUF should fitUD, the diam is fixed for the binary fit
+        # if not diam is None or \
+        #         (isinstance(doNotFit, list) and 'diam*' in doNotFit):
+        #     if not diam is None:
+        #         self.diam = diam
+        #     else:
+        #         diam = 0.0
+        #     self.fitUD(forcedDiam=diam)
+        # else:
+        #     self.fitUD()
+
+        self.fitUD()
 
         X = np.linspace(-self.rmax, self.rmax, N)
         Y = np.linspace(-self.rmax, self.rmax, N)
@@ -1363,10 +1502,12 @@ class Open:
                     params.append(tmp)
                     if p is None:
                         # -- single thread:
-                        self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data, self.observables, None, _doNotFit))
+                        self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data,
+                                    self.observables, None, _doNotFit))
                     else:
                         # -- multiple threads:
-                        p.apply_async(_fitFunc, (params[-1], self._chi2Data, self.observables, None, _doNotFit),
+                        p.apply_async(_fitFunc, (params[-1], self._chi2Data,
+                                 self.observables, None, _doNotFit),
                                  callback=self._cb_fitFunc)
                     k += 1
         if not p is None:
@@ -1374,10 +1515,11 @@ class Open:
             p.join()
 
         print ' | Computing map of interpolated Chi2 minima'
+        # -- last one to be ignored?
         self.allFits = self.allFits[:k-1]
 
         for i, f in enumerate(self.allFits):
-            #f['best']['f'] = np.abs(f['best']['f'])
+            f['best']['f'] = np.abs(f['best']['f'])
             f['best']['diam*'] = np.abs(f['best']['diam*'])
             # -- distance from start to finish of the fit
             f['dist'] = np.sqrt((params[i]['x']-f['best']['x'])**2+
@@ -1473,18 +1615,19 @@ class Open:
         print ' | Rbf interpolating: %d points -> %d pixels map'%(len(allMin),
                                                     Nx*Ny)
 
+
         rbf = scipy.interpolate.Rbf([x['best']['x'] for x in allMin],
                                     [x['best']['y'] for x in allMin],
                                     [x['chi2'] for x in allMin],
                                     function='linear')
         _Z = rbf(_X, _Y)
+
         _Z[_X**2+_Y**2<self.rmin**2] = self.chi2_UD
         _Z[_X**2+_Y**2>self.rmax**2] = self.chi2_UD
 
         plt.close(fig)
         if CONFIG['suptitle']:
             plt.figure(fig, figsize=(12,5.5))
-
             plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.78,
                                 wspace=0.2, hspace=0.2)
         else:
