@@ -177,12 +177,19 @@ Another parameter you might want to set is the maximum number of cores used. By 
 ```
 >>> candid.CONFIG['Ncores'] = 8
 ```
-will use 8 processes, or the actual number of cores present on your machine. The measured speedups (on a 96 cores machine) for `fitMap` and `detectionLimit` are:
+will use 8 processes, or the actual number of cores present on your machine if you have less than 8 cores. To know how many cores you have, run: ```
 
-N cores:         | 1 | 4  | 8 | 16 | 32 | 64 |
------------------|---|----|---|----|----|----|
-`fitMap`         | 1 | 3.5|6.7|10.6|14.5|16.2|
-`detectionLimit` | 1 | 3.5|5.9|8.1 |9.0 |10.2|
+```
+>>> import multiprocessing
+>>> multiprocessing.cpu_counts()
+```
+
+The measured speedups (on a 96 cores machine) for `fitMap` and `detectionLimit` are:
+
+|N cores:         | 1 | 4  | 8 | 16 | 32 | 64 |
+|-----------------|---|----|---|----|----|----|
+|`fitMap`         | 1 | 3.5|7|11|15|16|
+|`detectionLimit` | 1 | 3.5|6|8 |9 |10|
 
 8 cores is hence a good compromise.
 
