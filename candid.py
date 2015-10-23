@@ -201,22 +201,34 @@ def _VbinSlow(uv, param):
         Vstar = _Vld(B, param['diam*'], param['wavel'], alpha=param['alpha*'])
     else:
         Vstar = _Vud(B, param['diam*'], param['wavel'])
-    phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
+
     if 'diamc' in param.keys():
         Vcomp = _Vud(B, param['diamc'], param['wavel'])+0j
     else:
         Vcomp = 1.0 +0j # -- assumes it is unresolved.
-    Vcomp *= np.exp(-1j*phi)
 
-    # -- Alex's formula to take into account the bandwith smearing
-    # -- >>> Only works for V and V2, not for CP ??? -> TBD
-    if 'dwavel' in param.keys():
-        x = phi*param['dwavel']/param['wavel']/2.
-        x += 1e-6*(x==0)
-        c = np.abs(np.sin(x)/x)
+    if False:
+        #print 'sinc approx'
+        # -- bandwidth smearing approx
+        phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
+        Vcomp *= np.exp(-1j*phi)
+        # -- Alex's formula to take into account the bandwith smearing
+        # -- >>> Only works for V and V2, not for CP ??? -> TBD
+        if 'dwavel' in param.keys():
+            x = phi*param['dwavel']/param['wavel']/2.
+            x += 1e-6*(x==0)
+            c = np.sin(x)/x
+            #c = 2*scipy.special.j1(x)/x
+        else:
+            c = 1.0
+        res = (Vstar + c*f*Vcomp)/(1.0+f)
     else:
-        c = 1.0
-    res = (Vstar + c*f*Vcomp)/(1.0+f)
+        tmp = 0.0
+        for _l in [-0.5, -0.17, 0.17, 0.5, ]:
+            wl = param['wavel']+_l*param['dwavel']
+            phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/wl
+            tmp += Vcomp*np.exp(-1j*phi)/5.
+        res = (Vstar + f*tmp)/(1.0+f)
     return res
 #--
 def _VbinFast(uv, param):
@@ -237,6 +249,7 @@ def _VbinFast(uv, param):
     vr, vi = np.zeros(NU), np.zeros(NU)
 
     diam = float(param['diam*'])
+
     wavel = param['wavel']
 
     if isinstance(wavel, np.ndarray):
@@ -249,51 +262,64 @@ def _VbinFast(uv, param):
     else:
         x = 0.0
 
-    if 'x' in param.keys():
+    if 'y' in param.keys():
         y = float(param['y'])
     else:
         y = 0.0
+
     if 'f' in param.keys():
-        f = float(param['f'])
+        f = float(np.abs(param['f']))
     else:
         f = 0.0
+
+    if 'diamc' in param.keys():
+        diamc = float(param['diamc'])
+    else:
+        diamc = 0.0
 
     if 'dwavel' in param.keys():
         dwavel = float(param['dwavel'])
     else:
         dwavel = 0.0
+
     #print diam, x, y, f, wavel, dwavel
     #print u.shape, v.shape, wavel.shape, vr.shape
+
     code=\
     """
-    int i;
-    double B, vis, X, pi, phi, c;
+    int i, j, Nsmear;
+    double B, vis, X, pi, phi, visc, wl;
+
     pi=3.1415926535;
     f /= 100.;
-    c = 1.0;
+    phi = 0.0;
+    visc = 1.0;
+    Nsmear = 4; // number of channels for bandwidth smearing
     for (i=0; i<NU; i++){
+        // -- approximation of V_UD
         B = sqrt(u[i]*u[i] + v[i]*v[i]);
         X = pi*0.004848136*B*diam/wavel[i];
-        // -- approximation of V_UD
-        vis = 1 - 0.125*X*X + 0.00520833*X*X*X*X -0.00010850694*X*X*X*X*X*X;
-        if (f>0) {
-        // -- companion 'phase'
-        phi = -2*pi*0.004848136*(u[i]*x + v[i]*y)/wavel[i];
-        // -- bandwidth smearing
-        if (dwavel >0) {
-            c = sin(phi*dwavel/wavel[i]/2.)/(phi*dwavel/wavel[i]/2.);
-            c = sqrt(c*c);
-        }
-        // -- result
-        vr[i] = (vis + c*f*cos(phi))/(1.0 + f);
-        vi[i] = (c*f*sin(phi))/(1.0 + f);
-        } else {
-        vr[i] = vis;
-        }
+        vis = 1 - 0.125*X*X + 0.00520833*X*X*X*X - 0.00010850694*X*X*X*X*X*X;
 
+        if (f>0) {
+            if (diamc>0) {
+                X = pi*0.004848136*B*diamc/wavel[i];
+                visc = 1 - 0.125*X*X + 0.00520833*X*X*X*X - 0.00010850694*X*X*X*X*X*X;
+                }
+            vr[i] = vis/(1+f);
+            vi[i] = 0.0;
+            phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
+            for (j=0;j<Nsmear;j++) {
+                wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
+                vr[i] += f/Nsmear * visc * cos( phi/wl ) / (1+f);
+                vi[i] += f/Nsmear * visc * sin( phi/wl ) / (1+f);
+            }
+        } else {
+            vr[i] = vis;
+        }
     }
     """
-    err = weave.inline(code, ['u','v','NU','diam','x','y','f',
+    err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
                               'wavel','dwavel','vr','vi'],
                        compiler = 'gcc')
     res = vr + 1j*vi
@@ -303,8 +329,7 @@ def _VbinFast(uv, param):
 def _Vbin(uv, param):
     """
     """
-    if not 'diamc' in param.keys() and \
-        not ('alpha' in param.keys() and param['alpha']>0):
+    if not ('alpha' in param.keys() and param['alpha']>0):
         return _VbinFast(uv, param)
     else:
         return _Vbin(uv, param)
@@ -707,9 +732,8 @@ class Open:
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
-        - Ncores: max number of core used, if None (default) will use all
-          available cores but one.
         - wlOffset (in um) will be *added* to the wavelength table. Mainly for AMBER in LR-HK
+        - alpha: limb darkening coefficient
 
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
@@ -770,13 +794,13 @@ class Open:
 
         self.rmax = rmax
         if self.rmax is None:
-            self.rmax = 1.5*self.smearFov
-            print " | rmax= not given, set to 1.5*Field of View: rmax=%5.2f mas"%(self.rmax)
+            self.rmax = 1.2*self.smearFov
+            print " | rmax= not given, set to 1.2*Field of View: rmax=%5.2f mas"%(self.rmax)
         self.diam = None
         self.bestFit = None
 
         self.alpha=alpha
-        #self.Ncores = Ncores
+
         # if diam is None and\
         #     ('v2' in self.observables or 't3' in self.observables):
         #     print ' | no diameter given, trying to estimate it...'
@@ -1152,7 +1176,7 @@ class Open:
         if CONFIG['Ncores'] is None:
             self.Ncores = max(multiprocessing.cpu_count()-1,1)
         else:
-            self.Ncores = CONFIG['Ncores']
+            self.Ncores = min(multiprocessing.cpu_count(), CONFIG['Ncores'])
         if self.Ncores==1:
             return None
         else:
@@ -1203,8 +1227,8 @@ class Open:
         as {'x':mas, 'y':mas, 'f':fratio in %}. 'f' will be forced to be positive.
         """
         if step is None:
-            step = 1/6. * self.minSpatialScale
-            print ' > step= not given, using 1/6 X smallest spatial scale = %4.2f mas'%step
+            step = 1/4. * self.minSpatialScale
+            print ' > step= not given, using 1/4 X smallest spatial scale = %4.2f mas'%step
         # --
         if not rmax is None:
             self.rmax = rmax
@@ -1814,6 +1838,9 @@ class Open:
             print " > 'N=' not given, setting it to Ndata/2"
             N = max(self.ndata()/2, 100)
 
+        # -- in case there was a "removeCompanion" before
+        self._chi2Data = self._rawData
+
         print " > running N=%d fit"%N,
         self._progTime = [time.time(), time.time()]
         self.allFits, self._prog = [{} for k in range(N)], 0.0
@@ -2017,7 +2044,7 @@ class Open:
                     res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
-        return res
+        return
         # -_-_-
     def plotModel(self, param=None, fig=3):
         """

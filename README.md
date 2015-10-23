@@ -173,6 +173,19 @@ A global dictionnary CONFIG to set parameters. The list of default parameters is
 ```
 This will, for example, set the maximum computing time to 300s (instead of the default 180s). Note that this will have to be done every time you import or reload the library.
 
+Another parameter you might want to set is the maximum number of cores used. By default, CANDID will use all the cores but one (to spare you some CPU to so something else in the mean time): `candid.CONFIG['Ncores'] = None`. One can set manually how many cores to be used:
+```
+>>> candid.CONFIG['Ncores'] = 8
+```
+will use 8 processes, or the actual number of cores present on your machine. The measured speedups (on a 96 cores machine) for `fitMap` and `detectionLimit` are:
+
+N cores:         | 1 | 4  | 8 | 16 | 32 | 64 |
+-----------------|---|----|---|----|----|----|
+`fitMap`         | 1 | 3.5|6.7|10.6|14.5|16.2|
+`detectionLimit` | 1 | 3.5|5.9|8.1 |9.0 |10.2|
+
+8 cores is hence a good compromise.
+
 ## Informations
 
 ### Link
