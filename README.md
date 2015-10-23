@@ -176,7 +176,7 @@ This will, for example, set the maximum computing time to 300s (instead of the d
 
 ## Performances
 
-### general Performances
+### Execution times
 
 Execution times on a Intel(R) Core(TM) i5-4308U CPU @ 2.80GHz, using 3 Cores (out of 4) for the AXcir data set:
 
