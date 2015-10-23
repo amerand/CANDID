@@ -22,11 +22,11 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 * The code works only with a single OIFITS file. You will need an external tool to combine OIFITS files
 * The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
 * The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
+* The code can take lots of memory because it stores lots of intermediate results, so using a 64bit python is advisable.
 * The code is not particularly fast, but uses [multiprocessing](https://docs.python.org/2/library/multiprocessing.html): our experience on Macs is that it leads to several problems:
-** does not work properly with IPython Notebooks. [It seems to be known](https://github.com/ipython/ipython/issues/6109).
-** It works better with the IPython console, though it sometimes seem unresponsive (it makes sometimes the estimation of running time unreliable). Morover ctrl+C does not stop the code.
-** The smoothest behavior is obtained by running in a python shell.
-* The code can take lots of memory because it storse lots of intermediate reuslts, so using a 64bit python is advisable
+ * It does not work properly with IPython Notebooks. [It seems to be known](https://github.com/ipython/ipython/issues/6109).
+ * It works better with the IPython console, though it sometimes seems unresponsive (it makes sometimes the estimation of running time unreliable). Moreover ctrl+C does not stop the code.
+ * The smoothest behavior is obtained by running in a python shell.
 
 ## Examples:
 
@@ -206,7 +206,7 @@ Because not all computation are parallelized and there are some overheads due to
 |`fitMap`         | 1 | 3.5|7|11|15|16|
 |`detectionLimit` | 1 | 3.5|6|8 |9 |10|
 
-8 cores is hence a good compromise. 
+8 cores is hence a good compromise.
 
 ## Informations
 
