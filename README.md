@@ -38,6 +38,8 @@ see "candidTest.py", function "AXCir". on a Core i7 2.2GHz, It runs in about 50 
 
 **We strongly recommand you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
 
+The following example can be found in [axcir.py](https://github.com/amerand/CANDID/blob/master/axcir.py).
+
 Open OIFITS file with CANDID:
 
 ```
