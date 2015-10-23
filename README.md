@@ -204,6 +204,8 @@ https://github.com/amerand/CANDID
 ### Python dependencies
 python2.7, numpy, scipy, matplotlib and pyfits (or astropy)
 
+We also use scipy.weave to execute C code in line, hence a C compiler is required (Xcode on mac OS).
+
 ### LICENCE (BSD)
 
 Copyright (c) 2015, Antoine Mérand
