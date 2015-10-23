@@ -61,16 +61,15 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
 
 ```
 >>> axcir.chi2Map(fig=1, fratio=1.0)
- > step= not given, using 1/6 X smallest spatial scale = 0.45 mas
- > observables: ['v2', 'cp']
- > UD Fit
+ > step= not given, using 1/4 X smallest spatial scale = 0.67 mas
+ > observables: ['v2', 'icp']
+ > UD diam Fit
  | best fit diameter: 0.932 +- 0.006 mas
- | chi2 UD = 0.975
- | Computing Map 248x248 ... it should take about 70 seconds
- |================================================== | 99%   0 s remainingng
- | chi2 Min:  0.97
- | at X,Y  : -12.30,   3.35 mas
- | Nsigma  :  0.83
+ | chi2 = 0.975
+ |================================================== | 99%   0 s remaining
+ | chi2 Min: 0.959
+ | at X,Y  :   6.38, -28.55 mas
+ | NDOF=1499  > n sigma detection:  0.99 (fully uncorrelated errors)
 ```
 ![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
 
@@ -80,23 +79,23 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like fo
 ```
 >>> axcir.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
- > observables: ['v2', 'cp']
+ > observables: ['v2', 'icp']
  > Preliminary analysis
- > UD Fit
+ > UD diam Fit
  | best fit diameter: 0.932 +- 0.006 mas
- | chi2 UD = 0.975
- > Grid Fitting 30x30: ... it should take about 54 seconds
+ | chi2 = 0.975
  |================================================== |  99%   0 s remaining
  | Computing map of interpolated Chi2 minima
- | 255 individual minima for 643 fits
- | 10, 50, 90 percentiles for fit displacement: 1.1, 2.8, 5.3 mas
- | Grid has the correct steps of 3.78mas, optimimum step size found to be 3.81mas
+ | 195 individual minima for 643 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.2, 3.1, 6.1 mas
+ | Grid has the correct steps of 3.78mas,  optimimum step size found to be 4.26mas
+ | Rbf interpolating: 195 points -> 3721 pixels map
  > BEST FIT 0: chi2= 0.73
- |     x=   6.2403 +- 0.0575 mas
- |     y= -28.5270 +- 0.0835 mas
- |     f=   0.9395 +- 0.0423 %
- | diam*=   0.8156 +- 0.0081 mas
- | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.35 (assumes uncorr data)
+ |     x=   6.2468 +- 0.0580 mas
+ |     y= -28.5056 +- 0.1017 mas
+ |     f=   1.0411 +- 0.0472 %
+ | diam*=   0.8007 +- 0.0088 mas
+ | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.37 (assumes uncorr data)
 ```
 ![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
 
@@ -107,23 +106,23 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
 >>> p = axcir.bestFit['best']
 >>> axcir.fitMap(fig=3, removeCompanion=p)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
- > observables: ['v2', 'cp']
+ > observables: ['v2', 'icp']
  > Preliminary analysis
- > UD Fit
- | best fit diameter: 0.814 +- 0.006 mas
- | chi2 UD = 0.738
- > Grid Fitting 30x30: ... it should take about 32 seconds
+ > UD diam Fit
+ | best fit diameter: 0.800 +- 0.006 mas
+ | chi2 = 0.739
  |================================================== |  99%   0 s remaining
  | Computing map of interpolated Chi2 minima
- | 308 individual minima for 643 fits
- | 10, 50, 90 percentiles for fit displacement: 1.2, 3.1, 6.4 mas
- | Grid has the correct steps of 3.78mas, optimimum step size found to be 4.25mas
+ | 189 individual minima for 643 fits
+ | 10, 50, 90 percentiles for fit displacement: 1.2, 3.3, 7.5 mas
+ | current grid step (3.69mas) is too fine!!! --> 4.62mas should be enough
+ | Rbf interpolating: 189 points -> 3721 pixels map
  > BEST FIT 0: chi2= 0.69
- |     x=   6.6173 +- 0.1284 mas
- |     y=   2.4005 +- 0.1745 mas
- |     f=   0.3648 +- 0.0373 %
- | diam*=   0.7491 +- 0.0094 mas
- | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.10 (assumes uncorr data)
+ |     x=   6.6809 +- 0.1332 mas
+ |     y=   2.4402 +- 0.1770 mas
+ |     f=   0.3640 +- 0.0381 %
+ | diam*=   0.7332 +- 0.0097 mas
+ | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.02 (assumes uncorr data)
 ```
 
 ![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
@@ -138,11 +137,11 @@ On the correlations plots, the red dot with error bars is the fitted position; t
  > 'N=' not given, setting it to Ndata/2
  |================================================== |  99%   0 s remaining
  > sigma clipping in position and flux ratio for nSigmaClip= 3.5
- | 3 fits ignored
- |    diam* =   0.8144 + 0.0118 - 0.0158 mas
- |        f =   0.9505 + 0.0984 - 0.1062 %
- |        x =   6.2286 + 0.0950 - 0.1467 mas
- |        y = -28.5341 + 0.1343 - 0.2424 mas
+ | 0 fits ignored
+ |    diam* =   0.8002 + 0.0144 - 0.0153 mas
+ |        f =   1.0483 + 0.0891 - 0.0895 %
+ |        x =   6.2435 + 0.1029 - 0.1183 mas
+ |        y = -28.5068 + 0.1419 - 0.1686 mas
 ```
 
 ![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
@@ -153,45 +152,61 @@ We here remove the companion analytically (using a high contrast hypothesis) fro
 
 ```
 >>> axcir.detectionLimit(fig=5, step=1.5, removeCompanion=p)
- > observables: ['v2', 'cp']
- > UD Fit
- | best fit diameter: 0.814 +- 0.006 mas
- | chi2 UD = 0.738
- > Detection Limit Map 74x74 ... it should take about 139 seconds
+ > step= not given, using 1/2 X smallest spatial scale = 1.34 mas
+ > observables: ['v2', 'icp']
+ > UD diam Fit
+ | best fit diameter: 0.800 +- 0.006 mas
+ | chi2 = 0.739
+ > Detection Limit Map 83x83
  > Method: Absil
  |================================================== | 99%   0 s remaining
  > Method: injection
- |================================================== | 99%   0 s remainingg
+ |================================================== | 99%   0 s remaining
 ```
 ![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
 
 ### CONFIG parameters
 
-A global dictionnary CONFIG to set parameters. The list of default parameters is shown each time the library is loaded. To modidy the parameters, you should do it as such:
+A global dictionnary CONFIG to set parameters. The list of default parameters is shown each time the library is loaded. To modify the parameters, you should do it as such:
 ```
 >>> candid.CONFIG['longExecWarning'] = 300
 ```
 This will, for example, set the maximum computing time to 300s (instead of the default 180s). Note that this will have to be done every time you import or reload the library.
 
-Another parameter you might want to set is the maximum number of cores used. By default, CANDID will use all the cores but one (to spare you some CPU to so something else in the mean time): `candid.CONFIG['Ncores'] = None`. One can set manually how many cores to be used:
+## Performances
+
+### general Performances
+
+Execution times on a Intel(R) Core(TM) i5-4308U CPU @ 2.80GHz, using 3 Cores (out of 4) for the AXcir data set:
+
+| function  | time |
+|-----------|---------|
+| `chi2Map` |  18 s  |
+| `fitMap`  |  39 s |
+| `fitBoot` |   9 s |
+| `detectioneLimit` | 62 s |
+
+### Multiprocessing
+
+CANDID is parallelized and the number of core used can be set. By default, it will use all the cores but one (to spare you some CPU to do something else in the mean time): `candid.CONFIG['Ncores'] = None`. One can set manually how many cores to be used:
 ```
 >>> candid.CONFIG['Ncores'] = 8
 ```
-will use 8 processes, or the actual number of cores present on your machine if you have less than 8 cores. To know how many cores you have, run: ```
+will use 8 processes, or the actual number of cores present on your machine if you have less than 8 cores. To know how many cores you have, run:
 
 ```
 >>> import multiprocessing
 >>> multiprocessing.cpu_counts()
 ```
 
-The measured speedups (on a 96 cores machine) for `fitMap` and `detectionLimit` are:
+Because not all computation are parallelized and there are some overheads due to the 'multiprocessing' library, the gain is not linear with the number of cores used. The measured speedups (on a 96 cores machine) for `fitMap` and `detectionLimit` are:
 
 |N cores:         | 1 | 4  | 8 | 16 | 32 | 64 |
 |-----------------|---|----|---|----|----|----|
 |`fitMap`         | 1 | 3.5|7|11|15|16|
 |`detectionLimit` | 1 | 3.5|6|8 |9 |10|
 
-8 cores is hence a good compromise.
+8 cores is hence a good compromise. 
 
 ## Informations
 
