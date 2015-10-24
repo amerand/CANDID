@@ -21,6 +21,7 @@ import scipy.interpolate
 import scipy.stats
 from scipy import weave
 from scipy.weave import converters
+from scipy.misc import factorial
 
 import multiprocessing
 import os
@@ -41,7 +42,9 @@ import sys
 #__version__ = '0.13 | 2015/09/30' # fixed some bugs in list on minima for fitMap
 #__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
 #__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
-__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
+#__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
+__version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
+
 
 """
 # --------------------
@@ -72,7 +75,8 @@ print """
 ===================== This is CANDID ===================================
 [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
                 https://github.com/amerand/CANDID
-========================================================================"""
+========================================================================
+"""
 print ' | version:', __version__
 
 # -- some general parameters:
@@ -81,7 +85,8 @@ CONFIG = {'default cmap':'cubehelix', # color map used
           'longExecWarning': 300, # in seconds
           'suptitle':True, # display over head title
           'progress bar': True,
-          'Ncores': None # default is to use N-1 Cores
+          'Ncores': None, # default is to use N-1 Cores
+          'Nsmear': 4,
           }
 
 # -- units of the parameters
@@ -98,60 +103,6 @@ def variables():
     return
 
 variables()
-
-def Verify():
-    """
-    Checks the accuracy of the formula in the code
-    """
-    plt.close('all')
-    filename = 'AXCir.oifits'
-    print '\nLOADING:', filename, '(rmin=2 mas, rmax=20 mas)'
-    a = Open(filename, rmin=2, rmax=20)
-
-    diam = 0.9
-    p = {'x':12.0, 'y':12.0, 'f':0.00, 'diam*':diam, 'dwavel':a.dwavel, 'alpha*':0.0}
-    print '\nreplace data with synthetic ones for UD diam=%3.2f mas, without companion'%p['diam']
-
-    s = _modelObservables(a._rawData, p)
-    n = 0
-    for k in range(len(a._rawData)):
-        tmp = list(a._rawData[k])
-        # -- replace data with synthetic ones
-        tmp[-2] = s[n:n+tmp[-2].size].reshape(tmp[-2].shape)
-        # -- add noise:
-        noise = a._rawData[k][-1]
-        if a._rawData[k][0] == 't3': # KLUDGE!
-            print '@@@ T3 noise KLUDGE! @@@'
-            noise = np.minimum(noise, 0.1*tmp[-2])
-            tmp[-1] = noise
-
-        noise *= np.random.randn(noise.shape[0], noise.shape[1])
-        tmp[-2] += noise
-        a._rawData[k] = tuple(tmp)
-        n += a._rawData[k][-2].size
-    a._chi2Data = a._rawData
-
-    # print '\nFITTING UD, V2 only'
-    # a.observables = ['v2']; a.fitUD()
-
-    # print '\nFITTING UD, T3 only'
-    # a.observables = ['t3']; a.fitUD()
-
-    # print '\nCHI2 UD, cp'
-    # a.observables = ['cp']; a.fitUD(forcedDiam=diam)
-
-    for i,o in enumerate(['v2', 'cp', 't3']):
-        print '\nCHI2MAP'
-        a.observables = [o]
-        a.chi2Map(.5, fratio=1., fig=i+1)
-
-    print '\nCHI2MAP'
-    a.observables = ['v2', 'cp', 't3']
-    a.chi2Map(.5, fratio=1., fig=4)
-
-    print '\nCLOSING:', filename
-    a.close()
-    return
 
 # -- some general functions:
 def _Vud(base, diam, wavel):
@@ -230,7 +181,34 @@ def _VbinSlow(uv, param):
             tmp += Vcomp*np.exp(-1j*phi)/5.
         res = (Vstar + f*tmp)/(1.0+f)
     return res
-#--
+
+def _approxVUD(x='x', maxM=8):
+    """
+    """
+    n = 1
+    cm = lambda m: 2**(n+2*m-1)*factorial(m)*factorial(n+m)
+    return ['%s%s/%.1f'%(' -' if (-1)**m < 0 else ' +',
+                        '*'.join(x*(n+2*m-1)) if (n+2*m-1)>0 else '1',
+                         cm(m)) for m in range(maxM+1)]
+
+# -- set the approximation for UD visibility
+_VUDX = ''.join(_approxVUD('X', maxM=6)).strip()
+_VUDX =_VUDX[3:]
+_VUDXeval = eval('lambda X:'+_VUDX)
+if False: # -- check approximation
+    print _VUDX
+    plt.close('all')
+    plt.subplot(211)
+    x = np.linspace(1e-6, 7, 100)
+    plt.plot(x, 2*scipy.special.j1(x)/x, '-r', label='Bessel')
+    plt.plot(x, _VUDXeval(x), '-b', label='approximation')
+    plt.plot(x, 0*x, linestyle='dashed')
+    plt.ylim(-0.3,1)
+    plt.subplot(212)
+    plt.plot(x, 2*scipy.special.j1(x)/x-_VUDXeval(x), '-k', label='approximation')
+    plt.ylim(-0.01,0.01)
+    plt.legend()
+
 def _VbinFast(uv, param):
     """
     using weave
@@ -284,27 +262,27 @@ def _VbinFast(uv, param):
 
     #print diam, x, y, f, wavel, dwavel
     #print u.shape, v.shape, wavel.shape, vr.shape
+    Nsmear = CONFIG['Nsmear']
 
     code=\
     """
-    int i, j, Nsmear;
+    int i, j;
     double B, vis, X, pi, phi, visc, wl;
 
     pi=3.1415926535;
     f /= 100.;
     phi = 0.0;
     visc = 1.0;
-    Nsmear = 4; // number of channels for bandwidth smearing
     for (i=0; i<NU; i++){
         // -- approximation of V_UD
         B = sqrt(u[i]*u[i] + v[i]*v[i]);
         X = pi*0.004848136*B*diam/wavel[i];
-        vis = 1 - 0.125*X*X + 0.00520833*X*X*X*X - 0.00010850694*X*X*X*X*X*X;
+        vis = VUDX;
 
         if (f>0) {
             if (diamc>0) {
                 X = pi*0.004848136*B*diamc/wavel[i];
-                visc = 1 - 0.125*X*X + 0.00520833*X*X*X*X - 0.00010850694*X*X*X*X*X*X;
+                visc = VUDX;
                 }
             vr[i] = vis/(1+f);
             vi[i] = 0.0;
@@ -318,13 +296,163 @@ def _VbinFast(uv, param):
             vr[i] = vis;
         }
     }
-    """
+    """.replace('VUDX', _VUDX)
     err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
-                              'wavel','dwavel','vr','vi'],
+                              'wavel','dwavel','vr','vi', 'Nsmear'],
                        compiler = 'gcc')
     res = vr + 1j*vi
     res = res.reshape(s)
     return res
+
+def _T3binFast(uv, param):
+    """
+    using weave
+    uv = (u1,v1, u2, v2) where u1,v1, u2,v2 a are ndarray
+
+    param MUST contain:
+    - diam*, x, y: in mas
+    - f: in %
+    - wavel, dwavel: in um
+    """
+    #print param.keys()
+    u1, v1, u2, v2 = uv
+    s = u1.shape
+    u1, v1 = u1.flatten(), v1.flatten()
+    u2, v2 = u2.flatten(), v2.flatten()
+    NU = len(u1)
+    t3r, t3i = np.zeros(NU), np.zeros(NU)
+
+    diam = float(param['diam*'])
+
+    wavel = param['wavel']
+
+    if isinstance(wavel, np.ndarray):
+        wavel = wavel.flatten()
+    else:
+        wavel = np.ones(NU)*wavel
+
+    if 'x' in param.keys():
+        x = float(param['x'])
+    else:
+        x = 0.0
+
+    if 'y' in param.keys():
+        y = float(param['y'])
+    else:
+        y = 0.0
+
+    if 'f' in param.keys():
+        f = float(np.abs(param['f']))
+    else:
+        f = 0.0
+
+    if 'diamc' in param.keys():
+        diamc = float(param['diamc'])
+    else:
+        diamc = 0.0
+
+    if 'dwavel' in param.keys():
+        dwavel = float(param['dwavel'])
+    else:
+        dwavel = 0.0
+
+    #print diam, x, y, f, wavel, dwavel
+    #print u.shape, v.shape, wavel.shape, vr.shape
+    Nsmear = CONFIG['Nsmear']
+
+    code=\
+    """
+    int i, j;
+    // -- first baseline
+    double B1, vis1, phi1, visc1, vr1, vi1;
+
+    // -- second baseline
+    double B2, vis2, phi2, visc2, vr2, vi2;
+
+    // -- third baseline
+    double u12, v12;
+    double B12, vis12, phi12, visc12, vr12, vi12;
+
+    double X, pi, wl;
+    pi = 3.1415926535;
+    f /= 100.;
+
+    phi1  = 0.0;
+    phi2  = 0.0;
+    phi12 = 0.0;
+
+    visc1  = 1.0;
+    visc2  = 1.0;
+    visc12 = 1.0;
+
+    for (i=0; i<NU; i++){
+
+        // -- baselines for each u,v coordinates
+        B1 = sqrt(u1[i]*u1[i] + v1[i]*v1[i]);
+        B2 = sqrt(u2[i]*u2[i] + v2[i]*v2[i]);
+
+        u12 = u1[i] + u2[i];
+        v12 = v1[i] + v2[i];
+        B12 = sqrt(u12*u12 + v12*v12);
+
+
+        // -- approximation of V_UD
+        X = pi*0.004848136*B1*diam/wavel[i];
+        vis1 = VUDX;
+        X = pi*0.004848136*B2*diam/wavel[i];
+        vis2 = VUDX;
+        X = pi*0.004848136*B12*diam/wavel[i];
+        vis12 = VUDX;
+
+        t3r[i] = vis1*vis2*vis12;
+
+        if (f>0) {
+            if (diamc>0) {
+                // -- approximation of V_UD
+                X = pi*0.004848136*B1*diamc/wavel[i];
+                visc1 = VUDX;
+                X = pi*0.004848136*B2*diamc/wavel[i];
+                visc2 = VUDX;
+                X = pi*0.004848136*B12*diamc/wavel[i];
+                visc12 = VUDX;
+                }
+            t3r[i] = 0.0;
+
+            phi1  = -2*pi*0.004848136*(u1[i] * x + v1[i] * y);
+            phi2  = -2*pi*0.004848136*(u2[i] * x + v2[i] * y);
+            phi12 = -2*pi*0.004848136*(  u12 * x +   v12 * y);
+
+            for (j=0; j<Nsmear; j++) {
+                // -- wavelength in bin:
+                wl = wavel[i] + (-0.5 + j/(Nsmear-1.0)) * dwavel;
+
+                // -- binary visibilities:
+                vr1 = (vis1 + f*cos(phi1/wl)) / (1.0 + f);
+                vi1 = f*sin(phi1/wl) / (1.0 + f);
+
+                vr2 = (vis2 + f*cos(phi2/wl)) / (1.0 + f);
+                vi2 = f*sin(phi2/wl) / (1.0 + f);
+
+                vr12 = (vis12 + f*cos(phi12/wl)) / (1.0 + f);
+                vi12 = f*sin(phi12/wl) / (1.0 + f);
+
+                // -- T3 = V1 * V2 * conj(V12)
+                t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/Nsmear;
+                t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/Nsmear;
+
+                t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/Nsmear;
+                t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/Nsmear;
+            }
+        }
+    }
+    """.replace('VUDX', _VUDX)
+    err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y',
+                              'f','diamc','wavel','dwavel','t3r','t3i','Nsmear'],
+                       compiler = 'gcc')
+    res = t3r + 1j*t3i
+    res = res.reshape(s)
+    return res
+
 
 def _Vbin(uv, param):
     """
@@ -363,65 +491,41 @@ def _modelObservables(obs, param):
     # -- copy parameters:
     tmp = {k:param[k] for k in param.keys()}
     tmp['f'] = np.abs(tmp['f'])
+    dwavel = {}
     for i, o in enumerate(obs):
         if 'dwavel' in param.keys():
             dwavel = param['dwavel']
         elif 'dwavel;'+o[0].split(';')[1] in param.keys():
             dwavel = param['dwavel;'+o[0].split(';')[1]]
         else:
-            print o[0]
-            dwavel = None
+            dwavel = 0.0
 
+        # -- remove dwavel(s)
         tmp = {k:tmp[k] for k in param.keys() if not k.startswith('dwavel')}
-        if not dwavel is None:
-            tmp['dwavel'] = dwavel
 
-        # -- force using the monochromatic, since smearing is in _VBin
-        dwavel=None;
 
         if o[0].split(';')[0]=='v2':
             tmp['wavel'] = o[3]
-            if dwavel is None: # -- monochromatic
-                res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
-            else: # -- bandwidth smearing manually
-                wl0 = tmp['wavel']
-                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                    tmp['wavel'] = wl0 + x*dwavel
-                    res[i] += np.abs(_Vbin([o[1], o[2]], tmp))**2
-                tmp['wavel'] = wl0
-                res[i] /= float(CONFIG['n_smear'])
+            tmp['dwavel'] = dwavel
+            res[i] = np.abs(_Vbin([o[1], o[2]], tmp))**2
         elif o[0].split(';')[0].startswith('v2_'): # polynomial fit
             p = int(o[0].split(';')[0].split('_')[1])
             n = int(o[0].split(';')[0].split('_')[2])
             # -- wl range based on min, mean, max
             _wl = np.linspace(o[-4][0], o[-4][2], 2*n+2)
-            # -- remove pix width
-            tmp.pop('dwavel')
             _v2 = []
             for _l in _wl:
                 tmp['wavel']=_l
                 _v2.append(np.abs(_Vbin([o[1], o[2]], tmp))**2)
             _v2 = np.array(_v2)
-            res[i] = np.array([np.polyfit(_wl-o[-4][1], _v2[:,j], n)[n-p] for j in range(_v2.shape[1])])
+            res[i] = np.array([np.polyfit(_wl-o[-4][1], _v2[:,j], n)[n-p]
+                                for j in range(_v2.shape[1])])
 
         elif o[0].split(';')[0]=='cp' or o[0].split(';')[0]=='t3' or\
             o[0].split(';')[0]=='icp':
             tmp['wavel'] = o[5]
-            if dwavel is None: # -- monochromatic
-                t3 = _Vbin([o[1], o[2]], tmp)*\
-                     _Vbin([o[3], o[4]], tmp)*\
-                     np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
-            else: # -- bandwidth smearing manually
-                wl0 = tmp['wavel']
-                t3 = 0.0
-                for x in np.linspace(-0.5, 0.5, CONFIG['n_smear']):
-                    tmp['wavel'] = wl0 + x*dwavel
-                    _t3 = _Vbin([o[1], o[2]], tmp)*\
-                          _Vbin([o[3], o[4]], tmp)*\
-                          np.conj(_Vbin([o[1]+o[3], o[2]+o[4]], tmp))
-                    t3 += _t3/float(CONFIG['n_smear'])
-                tmp['wavel'] = wl0
-
+            tmp['dwavel'] = dwavel
+            t3 = _T3binFast((o[1], o[2], o[3], o[4]), tmp)
             if o[0].split(';')[0]=='cp':
                 res[i] = np.angle(t3)
             elif o[0].split(';')[0]=='icp':
@@ -1229,11 +1333,19 @@ class Open:
         if step is None:
             step = 1/4. * self.minSpatialScale
             print ' > step= not given, using 1/4 X smallest spatial scale = %4.2f mas'%step
-        # --
-        if not rmax is None:
-            self.rmax = rmax
-        if not rmin is None:
+
+        #--
+        if rmin is None:
+            self.rmin = self.minSpatialScale
+            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%(self.rmin)
+        else:
             self.rmin = rmin
+
+        if rmax is None:
+            self.rmax = 1.2*self.smearFov
+            print " | rmax= not given, set to 1.2*Field of View: rmax=%5.2f mas"%(self.rmax)
+        else:
+            self.rmax = rmax
 
         try:
             N = int(np.ceil(2*self.rmax/step))
@@ -1426,11 +1538,20 @@ class Open:
         """
         if step is None:
             step = np.sqrt(2) * self.minSpatialScale
-            print ' > step= not given, using sqrt(2) x smallest spatial scale = %4.2f mas'%step
-        if not rmax is None:
-            self.rmax = rmax
-        if not rmin is None:
+            print ' | step= not given, using sqrt(2) x smallest spatial scale = %4.2f mas'%step
+
+        if rmin is None:
+            self.rmin = self.minSpatialScale
+            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%(self.rmin)
+        else:
             self.rmin = rmin
+
+        if rmax is None:
+            self.rmax = 1.2*self.smearFov
+            print " | rmax= not given, set to 1.2*Field of View: rmax=%5.2f mas"%(self.rmax)
+        else:
+            self.rmax = rmax
+
         try:
             N = int(np.ceil(2*self.rmax/step))
         except:
@@ -2125,7 +2246,7 @@ class Open:
             print 'did not work'
         return
     def detectionLimit(self, step=None, diam=None, fig=4, addCompanion=None,
-                        removeCompanion=None, drawMaps=True, rmax=None,
+                        removeCompanion=None, drawMaps=True, rmin=None, rmax=None,
                         methods = ['Absil', 'injection'], fratio=1.):
         """
         step: number of steps N in the map (map will be NxN)
@@ -2145,8 +2266,19 @@ class Open:
         if step is None:
             step = 1/2. * self.minSpatialScale
             print ' > step= not given, using 1/2 X smallest spatial scale = %4.2f mas'%step
-        if not rmax is None:
+
+        if rmin is None:
+            self.rmin = self.minSpatialScale
+            print " | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%(self.rmin)
+        else:
+            self.rmin = rmin
+
+        if rmax is None:
+            self.rmax = 1.2*self.smearFov
+            print " | rmax= not given, set to 1.2*Field of View: rmax=%5.2f mas"%(self.rmax)
+        else:
             self.rmax = rmax
+
         try:
             N = int(np.ceil(2*self.rmax/step))
         except:

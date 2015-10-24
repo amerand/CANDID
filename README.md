@@ -8,6 +8,11 @@ This is a suite of Python2.7 tools to find faint companion around star in interf
 
 The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html)), with a grid for the starting points of the companion position. It ensures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum gride density (see example).
 
+Note that if you use [LITpro](http://www.jmmc.fr/litpro_page.htm), you might find that the results given by CANDID are different:
+* In general, position of the found companion is the same for LITpro and CANDID
+* LITpro tends to overestimate the flux ratio, because it does not take into account bandwidth smearing, whereas CANDID does. For AX Cir, the flux ratio found bt CANDID is 1%, whereas it is 0.8% for LITpro (or CANDID when bandwidth smearing is disabled).
+
+
 ### Detection limit
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
@@ -21,6 +26,7 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 * **The (non-)detection levels are given assuming the errors bars in the data are uncorrelated**. This is of course not the case for real data, in particular when a lot of spectral channels are present.
 * The code works only with a single OIFITS file. You will need an external tool to combine OIFITS files
 * The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
+* The UD visibility is computed using a polynomial approximation, so only first and second lobe visibilities for the primary can be handled. That should be enough but migh lead to some (unknown yet) side effects.
 * The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
 * The code can take lots of memory because it stores lots of intermediate results, so using a 64bit python is advisable.
 * The code is not particularly fast, but uses [multiprocessing](https://docs.python.org/2/library/multiprocessing.html): our experience on Macs is that it leads to several problems:
@@ -180,12 +186,12 @@ This will, for example, set the maximum computing time to 300s (instead of the d
 
 Execution times on a Intel(R) Core(TM) i5-4308U CPU @ 2.80GHz, using 3 Cores (out of 4) for the AXcir data set:
 
-| function  | time |
-|-----------|---------|
-| `chi2Map` |  18 s  |
-| `fitMap`  |  39 s |
-| `fitBoot` |   9 s |
-| `detectioneLimit` | 62 s |
+| function         | time |
+|------------------|------|
+| `chi2Map`        | 18 s |
+| `fitMap`         | 39 s |
+| `fitBoot`        |  9 s |
+| `detectionLimit` | 62 s |
 
 ### Multiprocessing
 
