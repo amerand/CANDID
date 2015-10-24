@@ -46,43 +46,18 @@ import sys
 __version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
 
 
-"""
-# --------------------
-# -- standard test: --
-# --------------------
-import candid
-axcir = candid.Open('AXCir.oifits')
-
-# -- simple chi2 map
-axcir.chi2Map(fig=1, fratio=1.0)
-
-# -- run a map of fit
-axcir.fitMap(fig=2)
-
-# -- save best fitted companion for later use
-p = axcir.bestFit['best']
-
-# this is actually: p = {'f': 0.9395, 'y': -28.53, 'x': 6.24, 'diam*': 0.816}
-
-# -- bootstrapping error bars around best companion
-axcir.fitBoot(param=p, fig=4)
-
-# -- detection limit
-axcir.detectionLimit(fig=5, removeCompanion=p)
-"""
-
 print """
-===================== This is CANDID ===================================
+========================== This is CANDID ==============================
 [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
                 https://github.com/amerand/CANDID
 ========================================================================
 """
-print ' | version:', __version__
+print ' version:', __version__
 
 # -- some general parameters:
 CONFIG = {'default cmap':'cubehelix', # color map used
           'chi2 scale' : 'lin', # can be log
-          'longExecWarning': 300, # in seconds
+          'long exec warning': 300, # in seconds
           'suptitle':True, # display over head title
           'progress bar': True,
           'Ncores': None, # default is to use N-1 Cores
@@ -1383,7 +1358,7 @@ class Open:
 
         # -- parallel treatment:
         print ' | Computing Map %dx%d'%(N, N),
-        if not CONFIG['longExecWarning'] is None:
+        if not CONFIG['long exec warning'] is None:
             # -- estimate how long it will take, in two passes
             params, Ntest = [], 20*max(multiprocessing.cpu_count()-1,1)
             for i in range(Ntest):
@@ -1397,11 +1372,11 @@ class Open:
             est = self._estimateRunTime(_chi2Func, params)
             est *= np.sum(self.mapChi2>=0)
             print '... it should take about %d seconds'%(int(est))
-            if not CONFIG['longExecWarning'] is None and\
-                 est>CONFIG['longExecWarning']:
+            if not CONFIG['long exec warning'] is None and\
+                 est>CONFIG['long exec warning']:
                 print " > WARNING: this will take too long. "
-                print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
-                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
+                print " | Increase CONFIG['long exec warning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['long exec warning'] = %d"%int(1.2*est)
                 print " | set it to None and the warning will disapear... at your own risks!"
                 return
         print ''
@@ -1600,7 +1575,7 @@ class Open:
 
         print ' > Grid Fitting %dx%d:'%(N, N),
         # -- estimate how long it will take, in two passes
-        if not CONFIG['longExecWarning'] is None:
+        if not CONFIG['long exec warning'] is None:
             params, Ntest = [], 2*max(multiprocessing.cpu_count()-1,1)
             for i in range(Ntest):
                 o = np.random.rand()*2*np.pi
@@ -1613,11 +1588,11 @@ class Open:
             est = self._estimateRunTime(_fitFunc, params)
             est *= self.Nfits
             print '... it should take about %d seconds'%(int(est))
-            if not CONFIG['longExecWarning'] is None and\
-                 est>CONFIG['longExecWarning']:
+            if not CONFIG['long exec warning'] is None and\
+                 est>CONFIG['long exec warning']:
                 print " > WARNING: this will take too long. "
-                print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
-                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
+                print " | Increase CONFIG['long exec warning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['long exec warning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
         print ''
@@ -1967,7 +1942,7 @@ class Open:
         self.allFits, self._prog = [{} for k in range(N)], 0.0
         self.Nfits = N
         # -- estimate how long it will take, in two passes
-        if not CONFIG['longExecWarning'] is None:
+        if not CONFIG['long exec warning'] is None:
             params, Ntest = [], 2*max(multiprocessing.cpu_count()-1,1)
             for i in range(Ntest):
                 tmp = {k:param[k] for k in param.keys()}
@@ -1980,11 +1955,11 @@ class Open:
             print '... it should take about %d seconds'%(int(est))
             self.allFits, self._prog = [{} for k in range(N)], 0.0
             self._progTime = [time.time(), time.time()]
-            if not CONFIG['longExecWarning'] is None and\
-                 est>CONFIG['longExecWarning']:
+            if not CONFIG['long exec warning'] is None and\
+                 est>CONFIG['long exec warning']:
                 print " > WARNING: this will take too long. "
-                print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
-                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
+                print " | Increase CONFIG['long exec warning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['long exec warning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
 
@@ -2301,7 +2276,7 @@ class Open:
         print ' > Detection Limit Map %dx%d'%(N,N),
 
         # -- estimate how long it will take
-        if not CONFIG['longExecWarning'] is None:
+        if not CONFIG['long exec warning'] is None:
             Ntest = 2*max(multiprocessing.cpu_count()-1,1)
             params = []
             for k in range (Ntest):
@@ -2314,11 +2289,11 @@ class Open:
             est = 1.5*self._estimateRunTime(_detectLimit, params)
             est *= N**2
             print '... it should take about %d seconds'%(int(est))
-            if not CONFIG['longExecWarning'] is None and\
-                 est>CONFIG['longExecWarning']:
+            if not CONFIG['long exec warning'] is None and\
+                 est>CONFIG['long exec warning']:
                 print " > WARNING: this will take too long. "
-                print " | Increase CONFIG['longExecWarning'] if you want to run longer computations."
-                print " | e.g. "+__name__+".CONFIG['longExecWarning'] = %d"%int(1.2*est)
+                print " | Increase CONFIG['long exec warning'] if you want to run longer computations."
+                print " | e.g. "+__name__+".CONFIG['long exec warning'] = %d"%int(1.2*est)
                 print " | set it to 'None' and the warning will disapear... at your own risks!"
                 return
         else:

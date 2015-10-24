@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import time
 
 import candid
-candid.CONFIG['longExecWarning'] = None
+candid.CONFIG['long exec warning'] = None
 if 'chapman.sc.eso.org' in platform.uname()[1]:
     # -- limit CPU usage on shared machine
     candid.CONFIG['Ncores'] = 8
