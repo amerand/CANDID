@@ -12,7 +12,6 @@ Note that if you use [LITpro](http://www.jmmc.fr/litpro_page.htm), you might fin
 * In general, position of the found companion is the same for LITpro and CANDID
 * LITpro tends to overestimate the flux ratio, because it does not take into account bandwidth smearing, whereas CANDID does. For AX Cir, the flux ratio found bt CANDID is 1%, whereas it is 0.8% for LITpro (or CANDID when bandwidth smearing is disabled).
 
-
 ### Detection limit
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
@@ -33,15 +32,15 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
  * It does not work properly with IPython Notebooks. [It seems to be known](https://github.com/ipython/ipython/issues/6109).
  * It works better with the IPython console, though it sometimes seems unresponsive (it makes sometimes the estimation of running time unreliable). Moreover ctrl+C does not stop the code.
  * The smoothest behavior is obtained by running in a python shell.
+* We use [scipy.weave](http://docs.scipy.org/doc/scipy/reference/tutorial/weave.html) to execute C code in line, hence a C compiler is required. On Mac OSX, Xcode is required. Note that you will need to run in the following command line `sudo xcrun cc` in order to agree to the XCode licence, overwise, the weave code will not compile and give you compilations errors.
 
 ## Examples:
 
-The following example can be found in [axcir.py](https://github.com/amerand/CANDID/blob/master/axcir.py).
+The following example can be found in [axcir.py](axcir.py).
 
-* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diamaters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
-* **fit Maps**. These are better, but much slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)): this demontrates that, in the case of our example, the secondary "detections" are only artefact from the main companion.
-* **detection limits**. We imlemented 2 methods; Absil's and our companion injection. Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove analytically the companion ([FIG5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)).
-
+* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diamaters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
+* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](doc/figure_3.png)): this demontrates that, in the case of our example, the secondary "detections" are only artefact from the main companion.
+* **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](doc/figure_5.png)).
 
 **We strongly recommend you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
 
@@ -78,11 +77,11 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
  | at X,Y  :   6.38, -28.55 mas
  | NDOF=1499  > n sigma detection:  0.99 (fully uncorrelated errors)
 ```
-![Figure 1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png)
+![Figure 1](doc/figure_1.png)
 
 
-### FIG2 - FITMAP:
-Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like for ([FIG1](https://github.com/amerand/CANDID/blob/master/doc/figure_1.png))). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size 'step='. In our example below, we let CANDID chose the step size, based on the angular resoultion of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
+### FITMAP:
+Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like for ([FIG1](doc/figure_1.png))). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size 'step='. In our example below, we let CANDID chose the step size, based on the angular resoultion of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
 ```
 >>> axcir.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
@@ -104,9 +103,9 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map (like fo
  | diam*=   0.8007 +- 0.0088 mas
  | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.37 (assumes uncorr data)
 ```
-![Figure 2](https://github.com/amerand/CANDID/blob/master/doc/figure_2.png)
+![Figure 2](doc/figure_2.png)
 
-### FIG3 - FITMAP, after removing companion
+### FITMAP, after removing companion
 CANDID offers the possibility, once a companion has been detected, to remove it analytically from the data and rerun a FITMAP. This allows to estimate the dynamic range of the data set, but also to detect fainter tertiary compents. fitMap stores the best fit in the dictionnary "bestFit", which key "best" contains the dictionnary containing the parameters. Note that axcir.bestFit['uncer'] contains the corresponding error bars.
 
 ```
@@ -132,9 +131,9 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
  | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.02 (assumes uncorr data)
 ```
 
-![Figure 3](https://github.com/amerand/CANDID/blob/master/doc/figure_3.png)
+![Figure 3](doc/figure_3.png)
 
-### FIG4 - ERROR BARS:
+### ERROR BARS by bootstraping:
 In order to better estimate the uncertainties on the companion we found, we can use bootstraping to estimate the incertainties around the best fit parameters. The default starting is the best fitted position: since we made a fit with an analytical removal of the companion, the currently stored companion is not the one found on Fig2; thankfully we stored it in the variable 'p'.
 
 On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
@@ -151,11 +150,11 @@ On the correlations plots, the red dot with error bars is the fitted position; t
  |        y = -28.5068 + 0.1419 - 0.1686 mas
 ```
 
-![Figure 4](https://github.com/amerand/CANDID/blob/master/doc/figure_4.png)
+![Figure 4](doc/figure_4.png)
 
 
-### FIG5 - DETECTION LIMIT, after analytically removing companion:
-We here remove the companion analytically (using a high contrast hypothesis) from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
+### DETECTION LIMIT, after analytically removing companion:
+We here remove the companion analytically from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
 
 ```
 >>> axcir.detectionLimit(fig=5, step=1.5, removeCompanion=p)
@@ -170,7 +169,7 @@ We here remove the companion analytically (using a high contrast hypothesis) fro
  > Method: injection
  |================================================== | 99%   0 s remaining
 ```
-![Figure 5](https://github.com/amerand/CANDID/blob/master/doc/figure_5.png)
+![Figure 5](doc/figure_5.png)
 
 ### CONFIG parameters
 
@@ -186,12 +185,12 @@ This will, for example, set the maximum computing time to 300s (instead of the d
 
 Execution times on a Intel(R) Core(TM) i5-4308U CPU @ 2.80GHz, using 3 Cores (out of 4) for the AXcir data set:
 
-| function         | time |
-|------------------|------|
-| `chi2Map`        | 18 s |
-| `fitMap`         | 39 s |
-| `fitBoot`        |  9 s |
-| `detectionLimit` | 62 s |
+| function         |  time |
+|------------------|-------|
+| `chi2Map`        |  22 s |
+| `fitMap`         |  45 s |
+| `fitBoot`        |   9 s |
+| `detectionLimit` | 126 s |
 
 ### Multiprocessing
 
@@ -210,8 +209,8 @@ Because not all computation are parallelized and there are some overheads due to
 
 |N cores:         | 1 | 4  | 8 | 16 | 32 | 64 |
 |-----------------|---|----|---|----|----|----|
-|`fitMap`         | 1 | 3.5|7|11|15|16|
-|`detectionLimit` | 1 | 3.5|6|8 |9 |10|
+|`fitMap`         | 1 | 3.5| 7 | 11 | 15 | 16 |
+|`detectionLimit` | 1 | 3.5| 6 |  8 |  9 | 10 |
 
 8 cores is hence a good compromise.
 
@@ -221,12 +220,13 @@ Because not all computation are parallelized and there are some overheads due to
 https://github.com/amerand/CANDID
 
 ### Developpers
-[Antoine Mérand](mailto:amerand-at-eso.org) and [Alexandre Gallenne](mailto:agallenne-at-astro-udec.cl)
+[Antoine Mérand](mailto:amerand-at-eso.org) and [Alexandre Gallenne](mailto:agallenn-at-eso.org)
 
 ### Python dependencies
 python2.7, numpy, scipy, matplotlib and pyfits (or astropy)
 
-We also use scipy.weave to execute C code in line, hence a C compiler is required (Xcode on mac OS).
+We also use scipy.weave to execute C code in line, hence a C compiler is required (Xcode on mac OS). Note that you will need to run in the following command line `sudo xcrun cc` in order to agree to the XCode licence, overwise, the weave code will not compile.
+
 
 ### LICENCE (BSD)
 

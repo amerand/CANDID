@@ -43,8 +43,10 @@ import sys
 #__version__ = '0.14 | 2015/09/30' # fixed some BIG bugs in fixed diameter option
 #__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
 #__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
-__version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
-
+#__version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
+__version__ = '0.18 | 2015/10/26' # change in injection with a simpler algorithm;
+                                  # change a bit in detectionLimit with injeciton,
+                                  # doing a UD fit now; auto smearing setting
 
 print """
 ========================== This is CANDID ==============================
@@ -170,7 +172,7 @@ def _approxVUD(x='x', maxM=8):
                          cm(m)) for m in range(maxM+1)]
 
 # -- set the approximation for UD visibility
-_VUDX = ''.join(_approxVUD('X', maxM=6)).strip()
+_VUDX = ''.join(_approxVUD('X', maxM=7)).strip()
 _VUDX =_VUDX[3:]
 _VUDXeval = eval('lambda X:'+_VUDX)
 if False: # -- check approximation
@@ -277,8 +279,10 @@ def _V2binFast(uv, param):
                 wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
                 vr[i] += f/Nsmear * visc * cos( phi/wl ) / (1+f);
                 vi[i] += f/Nsmear * visc * sin( phi/wl ) / (1+f);
-                v2[i] += ((vis + f*visc*cos(phi/wl))*(vis + f*visc*cos(phi/wl))/(1.+f)/(1.+f)+
-                    (f*visc*sin(phi/wl))*(vis + f*visc*sin(phi/wl))/(1.+f)/(1.+f))/Nsmear;
+                v2[i] += ((vis + f*visc*cos(phi/wl))*
+                          (vis + f*visc*cos(phi/wl))/(1.+f)/(1.+f)+
+                         (f*visc*sin(phi/wl))*
+                         (f*visc*sin(phi/wl))/(1.+f)/(1.+f))/Nsmear;
                 }
             }
         } else {
@@ -1529,7 +1533,7 @@ class Open:
         return
     def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None,
                removeCompanion=None, rmin=None, rmax=None, fratio=2.0, diam=None,
-               diamc=None, doNotFit=None):
+               diamc=None, doNotFit=None, fitAlso=None):
         """
         - filename: a standard OIFITS data file
         - observables = ['cp', 'scp', 'ccp', 'v2', 't3'] list of observables to take
@@ -1646,11 +1650,11 @@ class Open:
                     if p is None:
                         # -- single thread:
                         self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data,
-                                    self.observables, None, _doNotFit))
+                                    self.observables, fitAlso, _doNotFit))
                     else:
                         # -- multiple threads:
                         p.apply_async(_fitFunc, (params[-1], self._chi2Data,
-                                 self.observables, None, _doNotFit),
+                                 self.observables, fitAlso, _doNotFit),
                                  callback=self._cb_fitFunc)
                     k += 1
         if not p is None:
@@ -1855,9 +1859,13 @@ class Open:
         for ii, i in enumerate(np.argsort([x['chi2'] for x in allMin2])):
             print ' | BEST FIT %d: chi2=%5.2f'%(ii, allMin2[i]['chi2'])
             allMin2[i]['best']['f'] = np.abs(allMin2[i]['best']['f'] )
-            for s in ['x', 'y', 'f', 'diam*']:
+            keys = ['x', 'y', 'f', 'diam*']
+            if not fitAlso is None:
+                keys.extend(fitAlso)
+            for s in keys:
                 print ' | %5s='%s, '%8.4f +- %6.4f %s'%(allMin2[i]['best'][s],
                                                      allMin2[i]['uncer'][s], paramUnits(s))
+
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print ' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD, allMin2[i]['chi2'], self.ndata()-1),
@@ -2198,43 +2206,59 @@ class Open:
         for _k in self.dwavel.keys():
             param['dwavel;'+_k] = self.dwavel[_k]
 
-        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData, self.observables)
-
-
+        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
+                                                          self.observables)
         _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in
                                  self.observables, self._chi2Data), param)
+
         plt.close(fig)
         plt.figure(fig, figsize=(11,8))
         plt.clf()
         N = len(set(_types))
         for i,t in enumerate(set(_types)):
-            plotMod = False
             w = np.where((_types==t)*(1-np.isnan(_meas)))
             ax1 = plt.subplot(2,N,i+1)
             plt.title(t.split(';')[1])
-            plt.ylabel(t.split(';')[0])
             if any(np.iscomplex(_meas[w])):
-                _meas[w] = np.angle(_meas[w])
-                _mod[w] = np.angle(_mod[w])
-                plotMod = True
-            plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
-                         color='k', alpha=0.2)
-            plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
-            plt.plot(_uv[w], _mod[w], '.k', alpha=0.2)
-            if plotMod:
-                plt.plot(_uv[w], _mod[w]+2*np.pi, '.k', alpha=0.1)
-                plt.plot(_uv[w], _mod[w]-2*np.pi, '.k', alpha=0.1)
-                plt.ylim(-np.max(np.abs(_meas[w]+_errs[w])),
-                          np.max(np.abs(_meas[w]+_errs[w])))
+                res = (np.angle(_meas[w]/_mod[w])+np.pi)%(2*np.pi) - np.pi
+                print res.shape, _errs[w].shape
+                res /= _errs[w]
+                res = np.float_(res)
+                _measw = np.angle(_meas[w]).real
+                _modw = np.angle(_mod[w]).real
 
+                plt.plot(_uv[w], np.mod(_modw+np.pi/2, np.pi)-np.pi/2, '.k', alpha=0.1)
+                plt.scatter(_uv[w], np.mod(_measw+np.pi/2,np.pi)-np.pi/2, c=_wl[w],
+                            marker='o', cmap='hot_r', alpha=0.5)
+                plt.errorbar(_uv[w], np.mod(_measw+np.pi/2, np.pi)-np.pi/2,
+                            fmt=',', yerr=_errs[w], marker=None, color='k', alpha=0.2)
+                plt.ylabel(t.split(';')[0]+r': angle, mod $\pi$')
+
+                # for z in [-2,0,2]:
+                #     plt.plot(_uv[w], _mod[w]+z*np.pi, '.k', alpha=0.1)
+                #     plt.scatter(_uv[w], _meas[w]+z*np.pi, c=_wl[w],
+                #                 marker='o', cmap='hot_r', alpha=0.5)
+                #     plt.errorbar(_uv[w], _meas[w]+z*np.pi, fmt=',', yerr=_errs[w],
+                #                 marker=None, color='k', alpha=0.2)
+                #
+                # plt.ylim(-np.max(np.abs(_meas[w]+_errs[w])),
+                #           np.max(np.abs(_meas[w]+_errs[w])))
+            else:
+                res = (_meas[w]-_mod[w])/_errs[w]
+                plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
+                             color='k', alpha=0.2)
+                plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
+                plt.plot(_uv[w], _mod[w], '.k', alpha=0.2)
+                plt.ylabel(t.split(';')[0])
+
+            # -- residuals
             plt.subplot(2,N,i+1+N, sharex=ax1)
-            plt.plot(_uv[w], (_meas[w]-_mod[w])/_errs[w], '.k', alpha=0.5)
+            plt.plot(_uv[w], res, '.k', alpha=0.5)
             plt.xlabel('B/$\lambda$')
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
-
-        #print _meas.shape, _mod.shape
         return
+
     def _cb_nsigmaFunc(self, r):
         """
         callback function for detectionLimit()
