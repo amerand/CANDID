@@ -256,40 +256,45 @@ def _V2binFast(uv, param):
     phi = 0.0;
     // -- companion visibility, default is unresoved (V=1)
     visc = 1.0;
+
+    phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
+
     for (i=0; i<NU; i++){
         // -- primary star of V_UD
         B = sqrt(u[i]*u[i] + v[i]*v[i]);
-        X = pi*0.004848136*B*diam/wavel[i];
-        vis = VUDX;
+        if (Nsmear<2){
+            X = pi*0.004848136*B*diam/wavel[i];
+            vis = VUDX;
 
-        if (f>0) {
             if (diamc>0) {
                 X = pi*0.004848136*B*diamc/wavel[i];
                 visc = VUDX;
                 }
             vr[i] = vis/(1+f);
             vi[i] = 0.0;
-            phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
-            if (Nsmear<2){
-                vr[i] += f * visc * cos( phi/wavel[i] ) / (1+f);
-                vi[i] += f * visc * sin( phi/wavel[i] ) / (1+f);
-                v2[i] = vr[i]*vr[i] + vi[i]*vi[i];
-            } else {
-            for (j=0;j<Nsmear;j++) {
-                wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
-                vr[i] += f/Nsmear * visc * cos( phi/wl ) / (1+f);
-                vi[i] += f/Nsmear * visc * sin( phi/wl ) / (1+f);
-                v2[i] += ((vis + f*visc*cos(phi/wl))*
-                          (vis + f*visc*cos(phi/wl))/(1.+f)/(1.+f)+
-                         (f*visc*sin(phi/wl))*
-                         (f*visc*sin(phi/wl))/(1.+f)/(1.+f))/Nsmear;
-                }
-            }
+            vr[i] += f * visc * cos( phi/wavel[i] ) / (1+f);
+            vi[i] += f * visc * sin( phi/wavel[i] ) / (1+f);
+            v2[i] = vr[i]*vr[i] + vi[i]*vi[i];
         } else {
-            vr[i] = vis;
-            v2[i] = vis*vis;
+        for (j=0;j<Nsmear;j++) {
+            wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
+            X = pi*0.004848136*B*diam/wl;
+            vis = VUDX;
+            if (diamc>0) {
+                X = pi*0.004848136*B*diamc/wl;
+                visc = VUDX;
+                }
+
+            vr[i] += (vis + f * visc * cos( phi/wl ) ) / (1+f) / Nsmear;
+            vi[i] += f * visc * sin( phi/wl ) / (1+f) / Nsmear;
+            v2[i] += ((vis + f*visc*cos(phi/wl))*
+                      (vis + f*visc*cos(phi/wl))/(1.+f)/(1.+f)+
+                     (f*visc*sin(phi/wl))*
+                     (f*visc*sin(phi/wl))/(1.+f)/(1.+f))/Nsmear;
+            }
         }
     }
+
     """.replace('VUDX', _VUDX)
     err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
                               'wavel','dwavel','vr','vi', 'v2', 'Nsmear'],
@@ -391,17 +396,19 @@ def _T3binFast(uv, param):
         v12 = v1[i] + v2[i];
         B12 = sqrt(u12*u12 + v12*v12);
 
-        // -- approximation of V_UD
-        X = pi*0.004848136*B1*diam/wavel[i];
-        vis1 = VUDX;
-        X = pi*0.004848136*B2*diam/wavel[i];
-        vis2 = VUDX;
-        X = pi*0.004848136*B12*diam/wavel[i];
-        vis12 = VUDX;
+        phi1  = -2*pi*0.004848136*(u1[i] * x + v1[i] * y);
+        phi2  = -2*pi*0.004848136*(u2[i] * x + v2[i] * y);
+        phi12 = -2*pi*0.004848136*(  u12 * x +   v12 * y);
 
-        t3r[i] = vis1*vis2*vis12;
+        if (Nsmear<2) { // -- monochromatic
+            // -- approximation of V_UD
+            X = pi*0.004848136*B1*diam/wavel[i];
+            vis1 = VUDX;
+            X = pi*0.004848136*B2*diam/wavel[i];
+            vis2 = VUDX;
+            X = pi*0.004848136*B12*diam/wavel[i];
+            vis12 = VUDX;
 
-        if (f>0) {
             if (diamc>0) {
                 // -- approximation of V_UD
                 X = pi*0.004848136*B1*diamc/wavel[i];
@@ -411,77 +418,88 @@ def _T3binFast(uv, param):
                 X = pi*0.004848136*B12*diamc/wavel[i];
                 visc12 = VUDX;
                 }
-            t3r[i] = 0.0;
 
-            phi1  = -2*pi*0.004848136*(u1[i] * x + v1[i] * y);
-            phi2  = -2*pi*0.004848136*(u2[i] * x + v2[i] * y);
-            phi12 = -2*pi*0.004848136*(  u12 * x +   v12 * y);
+            // -- binary visibilities:
+            vr1 = (vis1 + f*cos(phi1/wavel[i])) / (1.0 + f);
+            vi1 = f*sin(phi1/wavel[i]) / (1.0 + f);
 
-            if (Nsmear<2) { // -- monochromatic
+            vr2 = (vis2 + f*cos(phi2/wavel[i])) / (1.0 + f);
+            vi2 = f*sin(phi2/wavel[i]) / (1.0 + f);
+
+            vr12 = (vis12 + f*cos(phi12/wavel[i])) / (1.0 + f);
+            vi12 = f*sin(phi12/wavel[i]) / (1.0 + f);
+
+            // -- T3 = V1 * V2 * conj(V12)
+            t3r[i] = vr1*(vr2*vr12 + vi2*vi12);
+            t3r[i] += vi1*(vr2*vi12 - vi2*vr12);
+            t3i[i] = vr1*(vi2*vr12 - vr2*vi12);
+            t3i[i] += vi1*(vr2*vr12 + vi2*vi12);
+
+        } else { // -- smeared
+            vr1 = 0.0;
+            vi1 = 0.0;
+            vr2 = 0.0;
+            vi2 = 0.0;
+            vr12 = 0.0;
+            vi12 = 0.0;
+            for (j=0; j<Nsmear; j++) {
+                // -- wavelength in bin:
+                wl = wavel[i] + (-0.5 + j/(Nsmear-1.0)) * dwavel;
+
+                // -- approximation of V_UD
+                X = pi*0.004848136*B1*diam/wl;
+                vis1 = VUDX;
+                X = pi*0.004848136*B2*diam/wl;
+                vis2 = VUDX;
+                X = pi*0.004848136*B12*diam/wl;
+                vis12 = VUDX;
+
+                if (diamc>0) {
+                    // -- approximation of V_UD
+                    X = pi*0.004848136*B1*diamc/wl;
+                    visc1 = VUDX;
+                    X = pi*0.004848136*B2*diamc/wl;
+                    visc2 = VUDX;
+                    X = pi*0.004848136*B12*diamc/wl;
+                    visc12 = VUDX;
+                    }
+
+                // == smear in T3 =======================
                 // -- binary visibilities:
-                vr1 = (vis1 + f*cos(phi1/wavel[i])) / (1.0 + f);
-                vi1 = f*sin(phi1/wavel[i]) / (1.0 + f);
+                vr1 = (vis1 + f*cos(phi1/wl)) / (1.0 + f);
+                vi1 = f*sin(phi1/wl) / (1.0 + f);
 
-                vr2 = (vis2 + f*cos(phi2/wavel[i])) / (1.0 + f);
-                vi2 = f*sin(phi2/wavel[i]) / (1.0 + f);
+                vr2 = (vis2 + f*cos(phi2/wl)) / (1.0 + f);
+                vi2 = f*sin(phi2/wl) / (1.0 + f);
 
-                vr12 = (vis12 + f*cos(phi12/wavel[i])) / (1.0 + f);
-                vi12 = f*sin(phi12/wavel[i]) / (1.0 + f);
+                vr12 = (vis12 + f*cos(phi12/wl)) / (1.0 + f);
+                vi12 = f*sin(phi12/wl) / (1.0 + f);
 
                 // -- T3 = V1 * V2 * conj(V12)
-                t3r[i] = vr1*(vr2*vr12 + vi2*vi12);
-                t3r[i] += vi1*(vr2*vi12 - vi2*vr12);
-                t3i[i] = vr1*(vi2*vr12 - vr2*vi12);
-                t3i[i] += vi1*(vr2*vr12 + vi2*vi12);
-
-            } else { // -- smeared
-                vr1 = 0.0;
-                vi1 = 0.0;
-                vr2 = 0.0;
-                vi2 = 0.0;
-                vr12 = 0.0;
-                vi12 = 0.0;
-                for (j=0; j<Nsmear; j++) {
-                    // -- wavelength in bin:
-                    wl = wavel[i] + (-0.5 + j/(Nsmear-1.0)) * dwavel;
-
-
-                    // == smear in T3 =======================
-                    // -- binary visibilities:
-                    vr1 = (vis1 + f*cos(phi1/wl)) / (1.0 + f);
-                    vi1 = f*sin(phi1/wl) / (1.0 + f);
-
-                    vr2 = (vis2 + f*cos(phi2/wl)) / (1.0 + f);
-                    vi2 = f*sin(phi2/wl) / (1.0 + f);
-
-                    vr12 = (vis12 + f*cos(phi12/wl)) / (1.0 + f);
-                    vi12 = f*sin(phi12/wl) / (1.0 + f);
-
-                    // -- T3 = V1 * V2 * conj(V12)
-                    t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/Nsmear;
-                    t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/Nsmear;
-                    t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/Nsmear;
-                    t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/Nsmear;
-                }
+                t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/Nsmear;
+                t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/Nsmear;
+                t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/Nsmear;
+                t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/Nsmear;
+            }
 
 /*
-                    // -- smear V_1, V_2, V_12, compute T3 later
-                    vr1 += (vis1 + f*cos(phi1/wl)) / (1.0 + f);
-                    vi1 += f*sin(phi1/wl) / (1.0 + f);
+                // -- smear V_1, V_2, V_12, compute T3 later
+                vr1 += (vis1 + f*cos(phi1/wl)) / (1.0 + f);
+                vi1 += f*sin(phi1/wl) / (1.0 + f);
 
-                    vr2 += (vis2 + f*cos(phi2/wl)) / (1.0 + f);
-                    vi2 += f*sin(phi2/wl) / (1.0 + f);
+                vr2 += (vis2 + f*cos(phi2/wl)) / (1.0 + f);
+                vi2 += f*sin(phi2/wl) / (1.0 + f);
 
-                    vr12 += (vis12 + f*cos(phi12/wl)) / (1.0 + f);
-                    vi12 += f*sin(phi12/wl) / (1.0 + f);
-                }
-                t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
-                t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/(Nsmear*Nsmear*Nsmear);
-                t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/(Nsmear*Nsmear*Nsmear);
-                t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
-*/
+                vr12 += (vis12 + f*cos(phi12/wl)) / (1.0 + f);
+                vi12 += f*sin(phi12/wl) / (1.0 + f);
             }
+            t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
+            t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/(Nsmear*Nsmear*Nsmear);
+            t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/(Nsmear*Nsmear*Nsmear);
+            t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
+*/
         }
+
     }
     """.replace('VUDX', _VUDX)
     err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y',
@@ -530,7 +548,6 @@ def _modelObservables(obs, param, flattened=True):
     # -- copy parameters:
     tmp = {k:param[k] for k in param.keys()}
     tmp['f'] = np.abs(tmp['f'])
-    dwavel = {}
     for i, o in enumerate(obs):
         if 'dwavel' in param.keys():
             dwavel = param['dwavel']
@@ -696,6 +713,7 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
             if f in fitOnly:
                 fitOnly.remove(f)
     # -- does the actual fit
+    #print param, fitOnly
     res = _dpfit_leastsqFit(_modelObservables,
                             filter(lambda c: c[0].split(';')[0] in observables, chi2Data),
                             param, _meas, _errs, fitOnly = fitOnly)
@@ -908,7 +926,7 @@ class Open:
         """
         self.alpha=alpha
         return
-    def fitUD(self, forcedDiam=None):
+    def fitUD(self, forcedDiam=None, fitAlso=None, guess=1.0):
         """
         FIT UD diameter model to the data (if )
         """
@@ -926,7 +944,7 @@ class Open:
             ('v2' in self.observables or 't3' in self.observables) and\
             ('v2' in [c[0].split(';')[0] for c in self._chi2Data] or
              't3' in [c[0].split(';')[0] for c in self._chi2Data]):
-            tmp = {'x':0.0, 'y':0.0, 'f':0.0, 'diam*':1.0, 'alpha*':self.alpha}
+            tmp = {'x':0.0, 'y':0.0, 'f':0.0, 'diam*':guess, 'alpha*':self.alpha}
             if self.alpha>0:
                 print ' | LD diam Fit'
             else:
@@ -934,10 +952,15 @@ class Open:
 
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
-            fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
+            fit_0 = _fitFunc(tmp, self._chi2Data, self.observables,
+                              fitAlso=fitAlso)
             self.chi2_UD = fit_0['chi2']
             print ' | best fit diameter: %5.3f +- %5.3f mas'%(fit_0['best']['diam*'],
                                                            fit_0['uncer']['diam*'])
+            if not fitAlso is None:
+                for k in fitAlso:
+                    print ' | %s: %5.3f +- %5.3f '%(k, fit_0['best'][k],
+                                                    fit_0['uncer'][k])
             self.diam = fit_0['best']['diam*']
             self.ediam = fit_0['uncer']['diam*']
             print ' | chi2 = %4.3f'%self.chi2_UD
@@ -1269,7 +1292,7 @@ class Open:
                 _dwavel = np.append(_dwavel, np.ones(c[-2].shape).flatten()*
                                         self.dwavel[c[0].split(';')[1]])
         res = (_uv*self.rmax/(_wl-0.5*_dwavel)-_uv*self.rmax/(_wl+0.5*_dwavel))*0.004848136
-        CONFIG['Nsmear'] = int(np.ceil(4*res.max()))
+        CONFIG['Nsmear'] = max(int(np.ceil(4*res.max())), 3)
         print ' | setting up Nsmear = %d'%CONFIG['Nsmear']
         return
 
@@ -2058,11 +2081,15 @@ class Open:
                         # -- weight the error bars
                         data[-1][-1] = data[-1][-1]/mask
 
-                    mask = np.random.rand(d[-1].shape[1])
-                    mask = np.float_(mask>=1/3.) + np.float_(mask>=2/3)
+                    mask = np.random.rand(d[-1].shape[-1])
+                    mask = np.float_(mask>=1/3.) + np.float_(mask>=2/3.)
                     mask[mask==0] += np.nan
                     # -- weight the error bars
-                    data[-1][-1] = data[-1][-1]/mask[None,:]
+                    if len(d[-1].shape)==2:
+                        data[-1][-1] = data[-1][-1]/mask[None,:]
+                    else:
+                        data[-1][-1] = data[-1][-1]/mask
+
 
             if p is None:
                 # -- single thread:
@@ -2076,10 +2103,10 @@ class Open:
 
         plt.close(fig)
         if CONFIG['suptitle']:
-            plt.figure(fig, figsize=(11,10))
-            plt.subplots_adjust(left=0.10, bottom=0.07,
-                            right=0.98, top=0.90,
-                            wspace=0.3, hspace=0.3)
+            plt.figure(fig, figsize=(9,9))
+            plt.subplots_adjust(left=0.07, bottom=0.07,
+                            right=0.98, top=0.88,
+                            wspace=0.35, hspace=0.35)
             title = "CANDID: bootstrapping uncertainties, %d rounds"%N
             title += ' using '+', '.join(self.observables)
             title += '\n'+self.titleFilename
@@ -2491,7 +2518,7 @@ def sliding_percentile(x, y, dx, percentile=50, smooth=True):
         return res
 
 def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
-                        doNotFit=[], epsfcn=1e-6, ftol=1e-5, fullOutput=True,
+                        doNotFit=[], epsfcn=1e-5, ftol=1e-5, fullOutput=True,
                         normalizedUncer=True, follow=None):
     """
     - params is a Dict containing the first guess.
