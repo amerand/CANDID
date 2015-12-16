@@ -251,19 +251,19 @@ def _V2binFast(uv, param):
     code=\
     """
     int i, j;
-    double B, vis, X, pi, phi, visc, wl;
+    double B, vis, X, pi, phi, visc, wl, t_vr, t_vi;
 
-    pi=3.1415926535;
+    pi = 3.1415926535;
     f /= 100.; // flux ratio given in %
     phi = 0.0;
     // -- companion visibility, default is unresoved (V=1)
     visc = 1.0;
 
-    phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
-
     for (i=0; i<NU; i++){
         // -- primary star of V_UD
         B = sqrt(u[i]*u[i] + v[i]*v[i]);
+        phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
+
         if (Nsmear<2){
             X = pi*0.004848136*B*diam/wavel[i];
             vis = VUDX;
@@ -272,10 +272,8 @@ def _V2binFast(uv, param):
                 X = pi*0.004848136*B*diamc/wavel[i];
                 visc = VUDX;
                 }
-            vr[i] = vis/(1+f);
-            vi[i] = 0.0;
-            vr[i] += f * visc * cos( phi/wavel[i] ) / (1+f);
-            vi[i] += f * visc * sin( phi/wavel[i] ) / (1+f);
+            vr[i] = vis/(1+f) + f * visc * cos( phi/wavel[i] ) / (1+f);
+            vi[i] = f * visc * sin( phi/wavel[i] ) / (1+f);
             v2[i] = vr[i]*vr[i] + vi[i]*vi[i];
         } else {
         for (j=0;j<Nsmear;j++) {
@@ -286,13 +284,12 @@ def _V2binFast(uv, param):
                 X = pi*0.004848136*B*diamc/wl;
                 visc = VUDX;
                 }
+            t_vr = (vis + f * visc * cos(phi/wl) ) / (1.+f) ;
+            t_vi = (0.0 + f * visc * sin(phi/wl) ) / (1.+f) ;
 
-            vr[i] += (vis + f * visc * cos( phi/wl ) ) / (1+f) / Nsmear;
-            vi[i] += f * visc * sin( phi/wl ) / (1+f) / Nsmear;
-            v2[i] += ((vis + f*visc*cos(phi/wl))*
-                      (vis + f*visc*cos(phi/wl))/(1.+f)/(1.+f)+
-                     (f*visc*sin(phi/wl))*
-                     (f*visc*sin(phi/wl))/(1.+f)/(1.+f))/Nsmear;
+            vr[i] += t_vr / Nsmear;
+            vi[i] += t_vi / Nsmear;
+            v2[i] += (t_vr*t_vr + t_vi*t_vi) / Nsmear;
             }
         }
     }
@@ -301,7 +298,6 @@ def _V2binFast(uv, param):
     err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
                               'wavel','dwavel','vr','vi', 'v2', 'Nsmear'],
                        compiler = 'gcc')
-
     v2 = v2.reshape(s)
     return v2
 
@@ -560,7 +556,6 @@ def _modelObservables(obs, param, flattened=True):
 
         # -- remove dwavel(s)
         tmp = {k:tmp[k] for k in param.keys() if not k.startswith('dwavel')}
-
 
         if o[0].split(';')[0]=='v2':
             tmp['wavel'] = o[3]
@@ -898,6 +893,10 @@ class Open:
             mjds.extend(list(set(d[-3].flatten())))
         self.allMJD = np.array(list(set(mjds)))
 
+        self.ALLobservables = list(set([c[0].split(';')[0] for c in self._rawData]))
+        self.ALLinstruments = list(set([c[0].split(';')[1] for c in self._rawData]))
+
+        # -- can be updated by user
         self.observables = list(set([c[0].split(';')[0] for c in self._rawData]))
         self.instruments = list(set([c[0].split(';')[1] for c in self._rawData]))
 
@@ -1067,8 +1066,8 @@ class Open:
                 ins = hdu.header['INSNAME']
                 arr = hdu.header['ARRNAME']
                 # if 'AMBER' in ins:
-                #     print ' > WARning - AMBER: rejecting WL<%3.1fum'%amberWLmin
-                #     print ' > WARning - AMBER: rejecting WL>%3.1fum'%amberWLmax
+                #     print ' > Warning - AMBER: rejecting WL<%3.1fum'%amberWLmin
+                #     print ' > Warning - AMBER: rejecting WL>%3.1fum'%amberWLmax
 
             if hdu.header['EXTNAME']=='OI_T3':
                 # -- CP
@@ -1313,7 +1312,7 @@ class Open:
         nan = 0
         for i, c in enumerate(self._chi2Data):
             if c[0].split(';')[0] in self.observables and\
-               c[0].split(';')[0] in self.instruments:
+               c[0].split(';')[1] in self.instruments:
                 tmp += len(c[-1].flatten())
                 nan += np.sum(1-(1-np.isnan(c[-1]))*(1-np.isnan(c[-2])))
         return int(tmp-nan)
@@ -1401,9 +1400,8 @@ class Open:
         if fratio is None:
             print ' | fratio= not given -> using 0.01 (==1%)'
             fratio = 1.0
-        print ' | observables:', self.observables
-        print ' | instruments:', self.instruments
-
+        print ' | observables:', self.observables, 'from', self.ALLobservables
+        print ' | instruments:', self.instruments, 'from', self.ALLinstruments
 
         self._chi2Data = self._copyRawData()
 
@@ -1504,6 +1502,7 @@ class Open:
             else:
                 title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
             title += ' Using '+', '.join(self.observables)
+            title += ' from '+', '.join(self.instruments)
             title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
@@ -1605,8 +1604,8 @@ class Open:
         except:
             print 'ERROR: you should define rmax first!'
         self.rmin = max(step, self.rmin)
-        print ' | observables:', self.observables
-        print ' | instruments:', self.instruments
+        print ' | observables:', self.observables, 'from', self.ALLobservables
+        print ' | instruments:', self.instruments, 'from', self.ALLinstruments
 
         # -- start with all data
         self._chi2Data = self._copyRawData()
@@ -1824,6 +1823,7 @@ class Open:
 
         title = "CANDID: companion search"
         title += ' using '+', '.join(self.observables)
+        title += ' from '+', '.join(self.instruments)
         title += '\n'+self.titleFilename
         if not removeCompanion is None:
             title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
@@ -2132,6 +2132,7 @@ class Open:
                             wspace=0.35, hspace=0.35)
             title = "CANDID: bootstrapping uncertainties, %d rounds"%N
             title += ' using '+', '.join(self.observables)
+            title += ' from '+', '.join(self.instruments)
             title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
@@ -2369,7 +2370,9 @@ class Open:
         except:
             print 'ERROR: you should define rmax first!'
             return
-        print ' | observables:', self.observables
+        print ' | observables:', self.observables, 'from', self.ALLobservables
+        print ' | instruments:', self.instruments, 'from', self.ALLinstruments
+
 
         # -- start with all data
         self._chi2Data = self._copyRawData()
