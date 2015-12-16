@@ -44,9 +44,11 @@ import sys
 #__version__ = '0.15 | 2015/10/02' # np.nanmean instead of np.mean in _chi2func
 #__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
 #__version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
-__version__ = '0.18 | 2015/10/26' # change in injection with a simpler algorithm;
+#__version__ = '0.18 | 2015/10/26' # change in injection with a simpler algorithm;
                                   # change a bit in detectionLimit with injeciton,
                                   # doing a UD fit now; auto smearing setting
+__version__ = '0.19 | 2015/12/26' # adding instrument selection
+
 
 print """
 ========================== This is CANDID ==============================
@@ -660,7 +662,7 @@ def _injectCompanionData(data, delta, param):
     return data
     return res
 
-def _generateFitData(chi2Data, observables):
+def _generateFitData(chi2Data, observables, instruments):
     """
     filter only the meaningful observables
     returns:
@@ -673,7 +675,8 @@ def _generateFitData(chi2Data, observables):
     """
     _meas, _errs, _wl, _uv, _type = np.array([]), np.array([]), np.array([]), [], []
     for c in chi2Data:
-        if c[0].split(';')[0] in observables:
+        if c[0].split(';')[0] in observables and \
+            c[0].split(';')[1] in instruments:
             _type.extend([c[0]]*len(c[-2].flatten()))
             _meas = np.append(_meas, c[-2].flatten())
             _errs = np.append(_errs, c[-1].flatten())
@@ -692,14 +695,15 @@ def _generateFitData(chi2Data, observables):
     _errs += _errs==0. # remove bad point in a dirty way
     return _meas, _errs, _uv, np.array(_type), _wl
 
-def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
+def _fitFunc(param, chi2Data, observables, instruments, fitAlso=None, doNotFit=None):
     """
     fit the data in "chi2data" (only "observables") using starting parameters
 
     returns a dpfit dictionnary
     """
     # -- extract meaningfull data
-    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables)
+    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables,
+                                                    instruments)
     # -- guess what needs to be fitted
     fitOnly=[]
     if param['f']!=0:
@@ -715,7 +719,9 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
     # -- does the actual fit
     #print param, fitOnly
     res = _dpfit_leastsqFit(_modelObservables,
-                            filter(lambda c: c[0].split(';')[0] in observables, chi2Data),
+                            filter(lambda c: c[0].split(';')[0] in observables and
+                                             c[0].split(';')[1] in instruments,
+                                             chi2Data),
                             param, _meas, _errs, fitOnly = fitOnly)
 
     # -- _k used in some callbacks
@@ -728,14 +734,15 @@ def _fitFunc(param, chi2Data, observables, fitAlso=None, doNotFit=None):
         res['best']['f'] = np.abs(res['best']['f'])
     return res
 
-def _chi2Func(param, chi2Data, observables):
+def _chi2Func(param, chi2Data, observables, instruments):
     """
     Returns the chi2r comparing model of parameters "param" and data "chi2Data", only
     considering "observables" (such as v2, cp, t3)
     """
-    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables)
+    _meas, _errs, _uv, _types, _wl = _generateFitData(chi2Data, observables, instruments)
 
-    res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables, chi2Data), param))
+    res = (_meas-_modelObservables(filter(lambda c: c[0].split(';')[0] in observables and
+                                                    c[0].split(';')[1] in instruments, chi2Data), param))
     res = np.nan_to_num(res) # FLAG == TRUE are nans in the data
     res[np.iscomplex(res)] = np.abs(res[np.iscomplex(res)])
     res = np.abs(res)**2/_errs**2
@@ -747,7 +754,7 @@ def _chi2Func(param, chi2Data, observables):
         #print 'test:', res
         return res
 
-def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
+def _detectLimit(param, chi2Data, observables, instruments, delta=None, method='injection'):
     """
     Returns the flux ratio (in %) for which the chi2 ratio between binary and UD is 3 sigmas.
 
@@ -763,19 +770,20 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
         tmp = {k:param[k] if k!='f' else 0.0 for k in param.keys()}
         # -- reference chi2 for UD
         if '_i' in param.keys() or '_j' in param.keys():
-            chi2_0 = _chi2Func(tmp, chi2Data, observables)[-1]
+            chi2_0 = _chi2Func(tmp, chi2Data, observables, instruments)[-1]
         else:
-            chi2_0 = _chi2Func(tmp, chi2Data, observables)
+            chi2_0 = _chi2Func(tmp, chi2Data, observables, instruments)
 
-    ndata = np.sum([c[-1].size for c in chi2Data if c[0].split(';')[0] in observables])
+    ndata = np.sum([c[-1].size for c in chi2Data if c[0].split(';')[0] in observables and
+                                                    c[0].split(';')[1] in instruments])
     n = 0
     while cond:
         if method=='Absil':
             fr.append(param['f'])
             if '_i' in param.keys() or '_j' in param.keys():
-                chi2.append(_chi2Func(param, chi2Data, observables)[-1])
+                chi2.append(_chi2Func(param, chi2Data, observables, instruments)[-1])
             else:
-                chi2.append(_chi2Func(param, chi2Data, observables))
+                chi2.append(_chi2Func(param, chi2Data, observables, instruments))
             nsigma.append(_nSigmas(chi2[-1], chi2_0, ndata))
 
         elif method=='injection':
@@ -788,7 +796,7 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
             # -- compare chi2 UD and chi2 Binary
             tmp = {k:(param[k] if k!='f' else 0.0) for k in param.keys()} # -- UD
             if 'v2' in observables or 't3' in observables:
-                fit = _fitFunc(tmp, data, observables,
+                fit = _fitFunc(tmp, data, observables, instruments,
                         doNotFit=filter(lambda k: k!='diam*', tmp.keys()))
                 a = fit['chi2']
             else:
@@ -796,12 +804,12 @@ def _detectLimit(param, chi2Data, observables, delta=None, method='injection'):
 
             if '_i' in param.keys() or '_j' in param.keys():
                 if a is None:
-                    a = _chi2Func(tmp, data, observables)[-1] # -- chi2 UD
-                b = _chi2Func(param, data, observables)[-1] # -- chi2 Binary
+                    a = _chi2Func(tmp, data, observables, instruments)[-1] # -- chi2 UD
+                b = _chi2Func(param, data, observables, instruments)[-1] # -- chi2 Binary
             else:
                 if a is None:
-                    a = _chi2Func(tmp, data, observables) # -- chi2 UD
-                b = _chi2Func(param, data, observables) # -- chi2 Binary
+                    a = _chi2Func(tmp, data, observables, instruments) # -- chi2 UD
+                b = _chi2Func(param, data, observables, instruments) # -- chi2 Binary
             chi2.append((a,b))
             nsigma.append(_nSigmas(a, b, ndata))
 
@@ -953,7 +961,7 @@ class Open:
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             fit_0 = _fitFunc(tmp, self._chi2Data, self.observables,
-                              fitAlso=fitAlso)
+                                self.instruments, fitAlso=fitAlso)
             self.chi2_UD = fit_0['chi2']
             print ' | best fit diameter: %5.3f +- %5.3f mas'%(fit_0['best']['diam*'],
                                                            fit_0['uncer']['diam*'])
@@ -975,7 +983,8 @@ class Open:
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             #fit_0 = _fitFunc(tmp, self._chi2Data, self.observables)
-            self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables)
+            self.chi2_UD = _chi2Func(tmp, self._chi2Data, self.observables,
+                                        self.instruments)
             self.ediam = np.nan
             print ' |  chi2 = %4.3f'%self.chi2_UD
         else:
@@ -1284,11 +1293,14 @@ class Open:
                 print '   ', d[0], '<E_syst / E_stat> = %4.2f'%(np.mean(tmp))
         return
     def _estimateNsmear(self):
-        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData, self.observables)
+        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
+                                                          self.observables,
+                                                          self.instruments)
         # -- dwavel:
         _dwavel = np.array([])
         for c in self._rawData:
-            if c[0].split(';')[0] in self.observables:
+            if c[0].split(';')[0] in self.observables and \
+                c[0].split(';')[1] in self.instruments:
                 _dwavel = np.append(_dwavel, np.ones(c[-2].shape).flatten()*
                                         self.dwavel[c[0].split(';')[1]])
         res = (_uv*self.rmax/(_wl-0.5*_dwavel)-_uv*self.rmax/(_wl+0.5*_dwavel))*0.004848136
@@ -1300,7 +1312,8 @@ class Open:
         tmp = 0
         nan = 0
         for i, c in enumerate(self._chi2Data):
-            if c[0].split(';')[0] in self.observables:
+            if c[0].split(';')[0] in self.observables and\
+               c[0].split(';')[0] in self.instruments:
                 tmp += len(c[-1].flatten())
                 nan += np.sum(1-(1-np.isnan(c[-1]))*(1-np.isnan(c[-2])))
         return int(tmp-nan)
@@ -1389,6 +1402,8 @@ class Open:
             print ' | fratio= not given -> using 0.01 (==1%)'
             fratio = 1.0
         print ' | observables:', self.observables
+        print ' | instruments:', self.instruments
+
 
         self._chi2Data = self._copyRawData()
 
@@ -1426,7 +1441,7 @@ class Open:
                           'f':1.0, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
-                params.append((tmp,self._chi2Data, self.observables))
+                params.append((tmp,self._chi2Data, self.observables, self.instruments))
             est = self._estimateRunTime(_chi2Func, params)
             est *= np.sum(self.mapChi2>=0)
             print '... it should take about %d seconds'%(int(est))
@@ -1453,11 +1468,13 @@ class Open:
 
                     if p is None:
                         # -- single thread:
-                        self._cb_chi2Map(_chi2Func(params, self._chi2Data, self.observables))
+                        self._cb_chi2Map(_chi2Func(params, self._chi2Data,
+                                                    self.observables, self.instruments))
                     else:
                         # -- multi-thread:
-                        p.apply_async(_chi2Func, (params, self._chi2Data, self.observables),
-                                  callback=self._cb_chi2Map)
+                        p.apply_async(_chi2Func, (params, self._chi2Data,
+                                    self.observables, self.instruments),
+                                    callback=self._cb_chi2Map)
         if not p is None:
             p.close()
             p.join()
@@ -1559,8 +1576,6 @@ class Open:
                diamc=None, doNotFit=None, fitAlso=None):
         """
         - filename: a standard OIFITS data file
-        - observables = ['cp', 'scp', 'ccp', 'v2', 't3'] list of observables to take
-            into account in the file. Default is all
         - N: starts fits on a NxN grid
         - rmax: size of the grid in mas (20 will search between -20mas to +20mas)
         - rmin: do not look into the inner radius, in mas
@@ -1591,6 +1606,7 @@ class Open:
             print 'ERROR: you should define rmax first!'
         self.rmin = max(step, self.rmin)
         print ' | observables:', self.observables
+        print ' | instruments:', self.instruments
 
         # -- start with all data
         self._chi2Data = self._copyRawData()
@@ -1634,7 +1650,8 @@ class Open:
                           'f':fratio, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
-                params.append((tmp, self._chi2Data, self.observables))
+                params.append((tmp, self._chi2Data, self.observables,
+                                self.instruments))
             est = self._estimateRunTime(_fitFunc, params)
             est *= self.Nfits
             print '... it should take about %d seconds'%(int(est))
@@ -1673,11 +1690,11 @@ class Open:
                     if p is None:
                         # -- single thread:
                         self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data,
-                                    self.observables, fitAlso, _doNotFit))
+                                    self.observables, self.instruments, fitAlso, _doNotFit))
                     else:
                         # -- multiple threads:
                         p.apply_async(_fitFunc, (params[-1], self._chi2Data,
-                                 self.observables, fitAlso, _doNotFit),
+                                 self.observables, self.instruments, fitAlso, _doNotFit),
                                  callback=self._cb_fitFunc)
                     k += 1
         if not p is None:
@@ -1946,7 +1963,8 @@ class Open:
             print '*'*3, 'do an additional fit by fitting also the bandwidth smearing', '*'*3
             print '*'*67
 
-            fit = _fitFunc(param, self._chi2Data, self.observables, fitAlso)
+            fit = _fitFunc(param, self._chi2Data, self.observables,
+                            self.instruments,fitAlso)
             print '  > chi2 = %5.3f'%fit['chi2']
             tmp = ['x', 'y', 'f', 'diam*']
             tmp.extend(fitAlso)
@@ -2013,7 +2031,8 @@ class Open:
                 tmp['_k'] = i
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
-                params.append((tmp, self._chi2Data, self.observables))
+                params.append((tmp, self._chi2Data, self.observables,
+                                self.instruments))
             est = self._estimateRunTime(_fitFunc, params)
             est *= self.Nfits
             print '... it should take about %d seconds'%(int(est))
@@ -2031,7 +2050,8 @@ class Open:
         tmp = {k:param[k] for k in param.keys()}
         for _k in self.dwavel.keys():
             tmp['dwavel;'+_k] = self.dwavel[_k]
-        refFit = _fitFunc(tmp, self._chi2Data, self.observables, fitAlso, doNotFit)
+        refFit = _fitFunc(tmp, self._chi2Data, self.observables,
+                            self.instruments, fitAlso, doNotFit)
 
         res = {'fit':refFit}
         res['MJD'] = self.allMJD.mean()
@@ -2093,10 +2113,13 @@ class Open:
 
             if p is None:
                 # -- single thread:
-                self._cb_fitFunc(_fitFunc(tmp, data, self.observables, fitAlso, doNotFit))
+                self._cb_fitFunc(_fitFunc(tmp, data, self.observables,
+                                        self.instruments, fitAlso, doNotFit))
             else:
                 # -- multi thread:
-                p.apply_async(_fitFunc, (tmp, data, self.observables, fitAlso, doNotFit), callback=self._cb_fitFunc)
+                p.apply_async(_fitFunc, (tmp, data, self.observables,
+                                self.instruments, fitAlso, doNotFit),
+                                        callback=self._cb_fitFunc)
         if not p is None:
             p.close()
             p.join()
@@ -2234,9 +2257,11 @@ class Open:
             param['dwavel;'+_k] = self.dwavel[_k]
 
         _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
-                                                          self.observables)
-        _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in
-                                 self.observables, self._chi2Data), param)
+                                                          self.observables,
+                                                          self.instruments)
+        _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in self.observables
+                                    and c[0].split(';')[1] in self.instruments,
+                                self._chi2Data), param)
 
         plt.close(fig)
         plt.figure(fig, figsize=(11,8))
@@ -2370,7 +2395,8 @@ class Open:
                        'f':fratio, 'diam*':self.diam, 'alpha*':self.alpha}
                 for _k in self.dwavel.keys():
                     tmp['dwavel;'+_k] = self.dwavel[_k]
-                params.append((tmp, self._chi2Data, self.observables, self._delta))
+                params.append((tmp, self._chi2Data, self.observables,
+                                self.instruments, self._delta))
             # -- Absil is twice as fast as injection
             est = 1.5*self._estimateRunTime(_detectLimit, params)
             est *= N**2
@@ -2411,11 +2437,13 @@ class Open:
                             params['dwavel;'+_k] = self.dwavel[_k]
                         if p is None:
                             # -- single thread:
-                            self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data, self.observables,
+                            self._cb_nsigmaFunc(_detectLimit(params, self._chi2Data,
+                                        self.observables, self.instruments,
                                            self._delta, method))
                         else:
                             # -- parallel:
-                            p.apply_async(_detectLimit, (params, self._chi2Data, self.observables,
+                            p.apply_async(_detectLimit, (params, self._chi2Data,
+                                        self.observables, self.instruments,
                                        self._delta, method), callback=self._cb_nsigmaFunc)
             if not p is None:
                 p.close()
