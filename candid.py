@@ -73,7 +73,8 @@ def paramUnits(s):
     if 'dwavel' in s:
         return 'um'
     else:
-        return {'x':'mas', 'y':'mas', 'f':'%', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none'}[s]
+        return {'x':'mas', 'y':'mas', 'f':'% primary', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none', 
+                'fres':'% primary'}[s]
 
 def variables():
     print ' | global parameters (can be updated):'
@@ -125,7 +126,6 @@ def _VbinSlow(uv, param):
         f = np.abs(param['f'])/100.
     else:
         f = 1/100.
-    f = min(f, 1.0) #
 
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
@@ -181,14 +181,18 @@ if False: # -- check approximation
     print _VUDX
     plt.close('all')
     plt.subplot(211)
-    x = np.linspace(1e-6, 7, 100)
+    x = np.linspace(1e-6, 7, 500)
     plt.plot(x, 2*scipy.special.j1(x)/x, '-r', label='Bessel')
     plt.plot(x, _VUDXeval(x), '-b', label='approximation')
     plt.plot(x, 0*x, linestyle='dashed')
     plt.ylim(-0.3,1)
+    plt.ylabel('visibility')
     plt.subplot(212)
-    plt.plot(x, 2*scipy.special.j1(x)/x-_VUDXeval(x), '-k', label='approximation')
-    plt.ylim(-0.01,0.01)
+    plt.plot(x, 100*(2*scipy.special.j1(x)/x-_VUDXeval(x))/(
+                scipy.special.j1(x)/x+_VUDXeval(x)/2.), '-k')
+    plt.ylabel('rel. err. %')
+    plt.xlabel(r'$\pi$ B $\theta$ / $\lambda$')
+    plt.ylim(-1,1)
     plt.legend()
 
 def _V2binFast(uv, param):
@@ -197,18 +201,22 @@ def _V2binFast(uv, param):
     uv = (u,v) where u,v a are ndarray
 
     param MUST contain:
-    - diam*, x, y, diamc (optional): in mas
+    - diam*, x, y: in mas
     - f: in %
-    - wavel, dwavel (optional): in um
+    - wavel: in um
+
+    optional:
+    - diamc: in mas
+    - dwavel: in um
+    - fres: fully resolved flux, in fraction of primary flux
     """
-    #print param.keys()
     u, v = uv
     s = u.shape
     u, v = u.flatten(), v.flatten()
     NU = len(u)
     vr, vi, v2 = np.zeros(NU), np.zeros(NU), np.zeros(NU)
 
-    diam = float(param['diam*'])
+    diam = np.abs(float(param['diam*']))
 
     wavel = param['wavel']
 
@@ -229,11 +237,12 @@ def _V2binFast(uv, param):
 
     if 'f' in param.keys():
         f = float(np.abs(param['f']))
+        #f = min(f, 1.0)
     else:
         f = 0.0
 
     if 'diamc' in param.keys():
-        diamc = float(param['diamc'])
+        diamc = np.abs(float(param['diamc']))
     else:
         diamc = 0.0
 
@@ -244,59 +253,69 @@ def _V2binFast(uv, param):
     if __warningDwavel and dwavel==0:
         print ' >>> WARNING: no spectral bandwidth provided!'
 
+    if 'fres' in param.keys():
+        fres = float(param['fres'])
+    else:
+        fres = 0.0
+
     #print diam, x, y, f, wavel, dwavel
     #print u.shape, v.shape, wavel.shape, vr.shape
     Nsmear = CONFIG['Nsmear']
 
-    code=\
-    """
+    code = u"""
     int i, j;
     double B, vis, X, pi, phi, visc, wl, t_vr, t_vi;
 
     pi = 3.1415926535;
-    f /= 100.; // flux ratio given in %
+    f /= 100.0; /* flux ratio given in % */
+    if (f>1){
+        f = 1.0;
+        }
+    fres /= 100.0; /* flux ratio given in % */
+    
     phi = 0.0;
-    // -- companion visibility, default is unresoved (V=1)
+    /* -- companion visibility, default is unresoved (V=1) */
     visc = 1.0;
-
+    vis = 1.0;
     for (i=0; i<NU; i++){
-        // -- primary star of V_UD
+        /* -- primary star of V_UD */
         B = sqrt(u[i]*u[i] + v[i]*v[i]);
         phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
 
         if (Nsmear<2){
-            X = pi*0.004848136*B*diam/wavel[i];
-            vis = VUDX;
-
+            if (diam>0){
+                X = pi*0.004848136*B*diam/wavel[i];
+                vis = VUDX;
+            }
             if (diamc>0) {
                 X = pi*0.004848136*B*diamc/wavel[i];
                 visc = VUDX;
                 }
-            vr[i] = vis/(1+f) + f * visc * cos( phi/wavel[i] ) / (1+f);
-            vi[i] = f * visc * sin( phi/wavel[i] ) / (1+f);
+            vr[i] = vis/(1+f+fres) + f * visc * cos( phi/wavel[i] ) / (1+f+fres);
+            vi[i] = f * visc * sin( phi/wavel[i] ) / (1+f+fres);
             v2[i] = vr[i]*vr[i] + vi[i]*vi[i];
         } else {
         for (j=0;j<Nsmear;j++) {
             wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
-            X = pi*0.004848136*B*diam/wl;
-            vis = VUDX;
+            if (diam>0){
+                X = pi*0.004848136*B*diam/wl;
+                vis = VUDX;
+            }
             if (diamc>0) {
                 X = pi*0.004848136*B*diamc/wl;
                 visc = VUDX;
                 }
-            t_vr = (vis + f * visc * cos(phi/wl) ) / (1.+f) ;
-            t_vi = (0.0 + f * visc * sin(phi/wl) ) / (1.+f) ;
+            t_vr = (vis + f * visc * cos(phi/wl) ) / (1.+f+fres);
+            t_vi = (0.0 + f * visc * sin(phi/wl) ) / (1.+f+fres);
 
             vr[i] += t_vr / Nsmear;
             vi[i] += t_vi / Nsmear;
             v2[i] += (t_vr*t_vr + t_vi*t_vi) / Nsmear;
             }
         }
-    }
-
-    """.replace('VUDX', _VUDX)
+    }""".replace('VUDX', _VUDX)
     err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
-                              'wavel','dwavel','vr','vi', 'v2', 'Nsmear'],
+                              'wavel','dwavel','vr','vi', 'v2', 'Nsmear', 'fres'],
                        compiler = 'gcc')
     v2 = v2.reshape(s)
     return v2
@@ -309,9 +328,14 @@ def _T3binFast(uv, param):
     param MUST contain:
     - diam*, x, y: in mas
     - f: in %
-    - wavel, dwavel: in um
+    - wavel: in um
+
+    optional:
+    - diamc: in mas
+    - dwavel: in um
+    - fres: unresolved flux, in fraction of primary flux
+
     """
-    #print param.keys()
     u1, v1, u2, v2 = uv
     s = u1.shape
     u1, v1 = u1.flatten(), v1.flatten()
@@ -319,7 +343,7 @@ def _T3binFast(uv, param):
     NU = len(u1)
     t3r, t3i = np.zeros(NU), np.zeros(NU)
 
-    diam = float(param['diam*'])
+    diam = np.abs(float(param['diam*']))
 
     wavel = param['wavel']
 
@@ -340,11 +364,12 @@ def _T3binFast(uv, param):
 
     if 'f' in param.keys():
         f = float(np.abs(param['f']))
+        #f = min(f, 1.0)
     else:
         f = 0.0
 
     if 'diamc' in param.keys():
-        diamc = float(param['diamc'])
+        diamc = np.abs(float(param['diamc']))
     else:
         diamc = 0.0
 
@@ -356,37 +381,47 @@ def _T3binFast(uv, param):
     if __warningDwavel and dwavel==0:
         print ' >>> WARNING: no spectral bandwidth provided!'
 
+    if 'fres' in param.keys():
+        fres = float(param['fres'])
+    else:
+        fres = 0.0
+
     #print diam, x, y, f, wavel, dwavel
     #print u.shape, v.shape, wavel.shape, vr.shape
     Nsmear = CONFIG['Nsmear']
 
-    code=\
-    """
-    int i, j;
-    // -- first baseline
+    code = u"""int i, j;
+    /* -- first baseline */
     double B1, vis1, phi1, visc1, vr1, vi1;
 
-    // -- second baseline
+    /* -- second baseline */
     double B2, vis2, phi2, visc2, vr2, vi2;
 
-    // -- third baseline
+    /* -- third baseline */
     double u12, v12;
     double B12, vis12, phi12, visc12, vr12, vi12;
 
     double X, pi, wl;
     pi = 3.1415926535;
-    f /= 100.; // flux ratio given in %
-
+    f /= 100.; /* flux ratio given in % */
+    if (f>1) {f = 1.0;}
+    fres /= 100.; /* flux ratio given in % */
+    
     phi1  = 0.0;
     phi2  = 0.0;
     phi12 = 0.0;
-    // -- companion visibility, default is unresoved (V=1)
+    vis1  = 1.0;
+    vis2  = 1.0;
+    vis12 = 1.0;
+
+    /* -- companion visibility, default is unresoved (V=1) */
     visc1  = 1.0;
     visc2  = 1.0;
     visc12 = 1.0;
 
+
     for (i=0; i<NU; i++){
-        // -- baselines for each u,v coordinates
+        /* -- baselines for each u,v coordinates */
         B1 = sqrt(u1[i]*u1[i] + v1[i]*v1[i]);
         B2 = sqrt(u2[i]*u2[i] + v2[i]*v2[i]);
 
@@ -398,17 +433,18 @@ def _T3binFast(uv, param):
         phi2  = -2*pi*0.004848136*(u2[i] * x + v2[i] * y);
         phi12 = -2*pi*0.004848136*(  u12 * x +   v12 * y);
 
-        if (Nsmear<2) { // -- monochromatic
-            // -- approximation of V_UD
-            X = pi*0.004848136*B1*diam/wavel[i];
-            vis1 = VUDX;
-            X = pi*0.004848136*B2*diam/wavel[i];
-            vis2 = VUDX;
-            X = pi*0.004848136*B12*diam/wavel[i];
-            vis12 = VUDX;
-
+        if (Nsmear<2) { /* -- monochromatic */
+            if (diam>0) {
+                /* -- approximation of V_UD */
+                X = pi*0.004848136*B1*diam/wavel[i];
+                vis1 = VUDX;
+                X = pi*0.004848136*B2*diam/wavel[i];
+                vis2 = VUDX;
+                X = pi*0.004848136*B12*diam/wavel[i];
+                vis12 = VUDX;
+            }
             if (diamc>0) {
-                // -- approximation of V_UD
+                /* -- approximation of V_UD */
                 X = pi*0.004848136*B1*diamc/wavel[i];
                 visc1 = VUDX;
                 X = pi*0.004848136*B2*diamc/wavel[i];
@@ -417,23 +453,23 @@ def _T3binFast(uv, param):
                 visc12 = VUDX;
                 }
 
-            // -- binary visibilities:
-            vr1 = (vis1 + f*cos(phi1/wavel[i])) / (1.0 + f);
-            vi1 = f*sin(phi1/wavel[i]) / (1.0 + f);
+            /* -- binary visibilities: */
+            vr1 = (vis1 + f*cos(phi1/wavel[i])) / (1.0 + f + fres);
+            vi1 = f*sin(phi1/wavel[i]) / (1.0 + f + fres);
 
-            vr2 = (vis2 + f*cos(phi2/wavel[i])) / (1.0 + f);
-            vi2 = f*sin(phi2/wavel[i]) / (1.0 + f);
+            vr2 = (vis2 + f*cos(phi2/wavel[i])) / (1.0 + f + fres);
+            vi2 = f*sin(phi2/wavel[i]) / (1.0 + f + fres);
 
-            vr12 = (vis12 + f*cos(phi12/wavel[i])) / (1.0 + f);
-            vi12 = f*sin(phi12/wavel[i]) / (1.0 + f);
+            vr12 = (vis12 + f*cos(phi12/wavel[i])) / (1.0 + f + fres);
+            vi12 = f*sin(phi12/wavel[i]) / (1.0 + f + fres);
 
-            // -- T3 = V1 * V2 * conj(V12)
+            /* -- T3 = V1 * V2 * conj(V12) */
             t3r[i] = vr1*(vr2*vr12 + vi2*vi12);
             t3r[i] += vi1*(vr2*vi12 - vi2*vr12);
             t3i[i] = vr1*(vi2*vr12 - vr2*vi12);
             t3i[i] += vi1*(vr2*vr12 + vi2*vi12);
 
-        } else { // -- smeared
+        } else { /* -- smeared */
             vr1 = 0.0;
             vi1 = 0.0;
             vr2 = 0.0;
@@ -441,19 +477,19 @@ def _T3binFast(uv, param):
             vr12 = 0.0;
             vi12 = 0.0;
             for (j=0; j<Nsmear; j++) {
-                // -- wavelength in bin:
+                /* -- wavelength in bin: */
                 wl = wavel[i] + (-0.5 + j/(Nsmear-1.0)) * dwavel;
-
-                // -- approximation of V_UD
-                X = pi*0.004848136*B1*diam/wl;
-                vis1 = VUDX;
-                X = pi*0.004848136*B2*diam/wl;
-                vis2 = VUDX;
-                X = pi*0.004848136*B12*diam/wl;
-                vis12 = VUDX;
-
+                if (diam>0) {
+                    /* -- approximation of V_UD */
+                    X = pi*0.004848136*B1*diam/wl;
+                    vis1 = VUDX;
+                    X = pi*0.004848136*B2*diam/wl;
+                    vis2 = VUDX;
+                    X = pi*0.004848136*B12*diam/wl;
+                    vis12 = VUDX;
+                }
                 if (diamc>0) {
-                    // -- approximation of V_UD
+                    /* -- approximation of V_UD */
                     X = pi*0.004848136*B1*diamc/wl;
                     visc1 = VUDX;
                     X = pi*0.004848136*B2*diamc/wl;
@@ -462,45 +498,27 @@ def _T3binFast(uv, param):
                     visc12 = VUDX;
                     }
 
-                // == smear in T3 =======================
-                // -- binary visibilities:
-                vr1 = (vis1 + f*cos(phi1/wl)) / (1.0 + f);
-                vi1 = f*sin(phi1/wl) / (1.0 + f);
+                /* == smear in T3 ======================= */
+                /* -- binary visibilities: */
+                vr1 = (vis1 + f*cos(phi1/wl)) / (1.0 + f + fres);
+                vi1 = f*sin(phi1/wl) / (1.0 + f + fres);
 
-                vr2 = (vis2 + f*cos(phi2/wl)) / (1.0 + f);
-                vi2 = f*sin(phi2/wl) / (1.0 + f);
+                vr2 = (vis2 + f*cos(phi2/wl)) / (1.0 + f + fres);
+                vi2 = f*sin(phi2/wl) / (1.0 + f + fres);
 
-                vr12 = (vis12 + f*cos(phi12/wl)) / (1.0 + f);
-                vi12 = f*sin(phi12/wl) / (1.0 + f);
+                vr12 = (vis12 + f*cos(phi12/wl)) / (1.0 + f + fres);
+                vi12 = f*sin(phi12/wl) / (1.0 + f + fres);
 
-                // -- T3 = V1 * V2 * conj(V12)
+                /* -- T3 = V1 * V2 * conj(V12) */
                 t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/Nsmear;
                 t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/Nsmear;
                 t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/Nsmear;
                 t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/Nsmear;
             }
-
-/*
-                // -- smear V_1, V_2, V_12, compute T3 later
-                vr1 += (vis1 + f*cos(phi1/wl)) / (1.0 + f);
-                vi1 += f*sin(phi1/wl) / (1.0 + f);
-
-                vr2 += (vis2 + f*cos(phi2/wl)) / (1.0 + f);
-                vi2 += f*sin(phi2/wl) / (1.0 + f);
-
-                vr12 += (vis12 + f*cos(phi12/wl)) / (1.0 + f);
-                vi12 += f*sin(phi12/wl) / (1.0 + f);
-            }
-            t3r[i] += vr1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
-            t3r[i] += vi1*(vr2*vi12 - vi2*vr12)/(Nsmear*Nsmear*Nsmear);
-            t3i[i] += vr1*(vi2*vr12 - vr2*vi12)/(Nsmear*Nsmear*Nsmear);
-            t3i[i] += vi1*(vr2*vr12 + vi2*vi12)/(Nsmear*Nsmear*Nsmear);
-*/
         }
 
-    }
-    """.replace('VUDX', _VUDX)
-    err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y',
+    }""".replace('VUDX', _VUDX)
+    err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y', 'fres',
                               'f','diamc','wavel','dwavel','t3r','t3i','Nsmear'],
                        compiler = 'gcc')
     res = t3r + 1j*t3i
@@ -690,7 +708,7 @@ def _generateFitData(chi2Data, observables, instruments):
     _errs += _errs==0. # remove bad point in a dirty way
     return _meas, _errs, _uv, np.array(_type), _wl
 
-def _fitFunc(param, chi2Data, observables, instruments, fitAlso=None, doNotFit=None):
+def _fitFunc(param, chi2Data, observables, instruments, fitAlso=[], doNotFit=[]):
     """
     fit the data in "chi2data" (only "observables") using starting parameters
 
@@ -701,18 +719,25 @@ def _fitFunc(param, chi2Data, observables, instruments, fitAlso=None, doNotFit=N
                                                     instruments)
     # -- guess what needs to be fitted
     fitOnly=[]
+    
     if param['f']!=0:
-        fitOnly.extend(['x', 'y', 'f'])
+        fitOnly.extend(['x', 'y', 'f'])        
+    
     if 'v2' in observables or 't3' in observables:
-       fitOnly.append('diam*')
+       for k in ['diam*', 'diamc', 'fres']:
+           if k in param.keys():
+               fitOnly.append(k)
+        
     if not fitAlso is None:
         fitOnly.extend(fitAlso)
-    if not doNotFit is None:
-        for f in doNotFit:
-            if f in fitOnly:
-                fitOnly.remove(f)
+    
+    fitOnly = list(set(fitOnly))
+    for f in doNotFit:
+        fitOnly.remove(f)
+    
+    #print param, fitOnly, doNotFit
+
     # -- does the actual fit
-    #print param, fitOnly
     res = _dpfit_leastsqFit(_modelObservables,
                             filter(lambda c: c[0].split(';')[0] in observables and
                                              c[0].split(';')[1] in instruments,
@@ -843,7 +868,8 @@ def _detectLimit(param, chi2Data, observables, instruments, delta=None, method='
 # == The main class
 class Open:
     global CONFIG, _ff2_data
-    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None, wlOffset=0.0, alpha=0.0):
+    def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None,
+                wlOffset=0.0, alpha=0.0, v2bias = 1.):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
@@ -853,6 +879,7 @@ class Open:
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
         self.wlOffset = wlOffset # mainly to correct AMBER poor wavelength calibration...
+        self.v2bias = v2bias
         if isinstance(filename, list):
             self._initOiData()
             for i,f in enumerate(filename):
@@ -1133,6 +1160,7 @@ class Open:
                     print ' > WARNING: no valid T3PHI values in this HDU'
                 # -- T3
                 data = hdu.data['T3AMP']
+                data /= np.sqrt(self.v2bias)**3
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
                 data[hdu.data['T3AMPERR']>1e8] = np.nan # we'll deal with that later...
                 if len(data.shape)==1:
@@ -1177,6 +1205,9 @@ class Open:
                 if len(err.shape)==1:
                     err = np.array([np.array([e]) for e in err])
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
+
+                data /= self.v2bias
+
                 if 'AMBER' in ins:
                     print ' | !!AMBER: rejecting V2 WL<%3.1fum'%amberWLmin
                     print ' | !!AMBER: rejecting V2 WL>%3.1fum'%amberWLmax
@@ -1493,7 +1524,7 @@ class Open:
 
         plt.close(fig)
         if CONFIG['suptitle']:
-            plt.figure(fig, figsize=(12,5.8))
+            plt.figure(fig, figsize=(12/1.2,5.8/1.2))
             plt.subplots_adjust(top=0.78, bottom=0.08,
                                 left=0.08, right=0.99, wspace=0.10)
             title = "CANDID: $\chi^2$ Map for f$_\mathrm{ratio}$=%3.1f%% and "%(fratio)
@@ -1502,11 +1533,11 @@ class Open:
             else:
                 title += r'fixed $\theta_\mathrm{UD}=%4.3f$ mas.'%(self.diam)
             title += ' Using '+', '.join(self.observables)
-            title += ' from '+', '.join(self.instruments)
+            title += '\nfrom '+', '.join(self.instruments)
             title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
-            plt.figure(fig, figsize=(12,5.4))
+            plt.figure(fig, figsize=(12/1.2,5.4/1.2))
             plt.subplots_adjust(top=0.88, bottom=0.10,
                                 left=0.08, right=0.99, wspace=0.10)
 
@@ -1570,16 +1601,17 @@ class Open:
         # except:
         #     print '!!! I expect a dict!'
         return
+
     def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None,
-               removeCompanion=None, rmin=None, rmax=None, fratio=2.0, diam=None,
-               diamc=None, doNotFit=None, fitAlso=None):
+               removeCompanion=None, rmin=None, rmax=None, fratio=2.0, 
+               doNotFit=[], addParam={}):
         """
         - filename: a standard OIFITS data file
         - N: starts fits on a NxN grid
         - rmax: size of the grid in mas (20 will search between -20mas to +20mas)
         - rmin: do not look into the inner radius, in mas
         - diam: angular diameter of the central star, in mas. If 'v2' are present and in
-            "observables", the UD diam will actually be fitted
+                "observables", the UD diam will actually be fitted
         - fig=0: the figure number (default 0)
         - addfits: add the fit and fimap in the FITS file, as a binary table
         """
@@ -1603,7 +1635,7 @@ class Open:
             N = int(np.ceil(2*self.rmax/step))
         except:
             print 'ERROR: you should define rmax first!'
-        self.rmin = max(step, self.rmin)
+        #self.rmin = max(step, self.rmin)
         print ' | observables:', self.observables, 'from', self.ALLobservables
         print ' | instruments:', self.instruments, 'from', self.ALLinstruments
 
@@ -1636,7 +1668,7 @@ class Open:
         self.allFits, self._prog = [{} for k in range(N*N)], 0.0
         self._progTime = [time.time(), time.time()]
         self.Nfits = np.sum((X[:,None]**2+Y[None,:]**2>=self.rmin**2)*
-                      (X[:,None]**2+Y[None,:]**2<=self.rmax**2))
+                            (X[:,None]**2+Y[None,:]**2<=self.rmax**2))
 
         print ' | Grid Fitting %dx%d:'%(N, N),
         # -- estimate how long it will take, in two passes
@@ -1670,31 +1702,24 @@ class Open:
         for y in Y:
             for x in X:
                 if x**2+y**2>=self.rmin**2 and x**2+y**2<=self.rmax**2:
-                    tmp={'diam*': self.diam if diam is None else diam,
-                        'f':fratio, 'x':x, 'y':y, '_k':k, 'alpha*':self.alpha}
+                    tmp={'diam*': 0.0, 'f':fratio, 'x':x, 'y':y, '_k':k, 
+                         'alpha*':self.alpha}
                     for _k in self.dwavel.keys():
                         tmp['dwavel;'+_k] = self.dwavel[_k]
-                    if not diamc is None:
-                        tmp['diamc'] = diamc
-                    _doNotFit=[]
-                    if not diam is None:
-                        _doNotFit.append('diam*')
-                    if not diamc is None:
-                        _doNotFit.append('diamc')
-                        tmp['diamc'] = diamc
-                    if not doNotFit is None:
-                        _doNotFit.extend(doNotFit)
-
+                    tmp.update(addParam)
                     params.append(tmp)
+                    #print tmp, doNotFit
                     if p is None:
                         # -- single thread:
                         self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data,
-                                    self.observables, self.instruments, fitAlso, _doNotFit))
+                                                  self.observables, self.instruments, 
+                                                  None, doNotFit))
                     else:
                         # -- multiple threads:
                         p.apply_async(_fitFunc, (params[-1], self._chi2Data,
-                                 self.observables, self.instruments, fitAlso, _doNotFit),
-                                 callback=self._cb_fitFunc)
+                                                 self.observables, self.instruments, 
+                                                 None, doNotFit),
+                                                 callback=self._cb_fitFunc)
                     k += 1
         if not p is None:
             p.close()
@@ -1706,7 +1731,8 @@ class Open:
 
         for i, f in enumerate(self.allFits):
             f['best']['f'] = np.abs(f['best']['f'])
-            f['best']['diam*'] = np.abs(f['best']['diam*'])
+            if 'diam*' in f['best'].keys():
+                f['best']['diam*'] = np.abs(f['best']['diam*'])
             # -- distance from start to finish of the fit
             f['dist'] = np.sqrt((params[i]['x']-f['best']['x'])**2+
                                 (params[i]['y']-f['best']['y'])**2)
@@ -1731,8 +1757,8 @@ class Open:
                 tmp /= n
                 chi2.append(tmp)
             if not any([c<=1 for c in chi2]) and \
-                    f['best']['x']**2+f['best']['y']**2>self.rmin**2 and \
-                    f['best']['x']**2+f['best']['y']**2<self.rmax**2:
+                    f['best']['x']**2+f['best']['y']**2>=self.rmin**2 and \
+                    f['best']['x']**2+f['best']['y']**2<=self.rmax**2:
                 allMin.append(f)
                 allMin[-1]['nsigma'] = _nSigmas(self.chi2_UD,  allMin[-1]['chi2'], self.ndata()-1)
                 try:
@@ -1813,17 +1839,17 @@ class Open:
 
         plt.close(fig)
         if CONFIG['suptitle']:
-            plt.figure(fig, figsize=(12,5.5))
+            plt.figure(fig, figsize=(12/1.2,5.5/1.2))
             plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.78,
                                 wspace=0.2, hspace=0.2)
         else:
-            plt.figure(fig, figsize=(12,5.))
+            plt.figure(fig, figsize=(12/1.2,5./1.2))
             plt.subplots_adjust(left=0.1, right=0.99, bottom=0.1, top=0.9,
                                 wspace=0.2, hspace=0.2)
 
         title = "CANDID: companion search"
         title += ' using '+', '.join(self.observables)
-        title += ' from '+', '.join(self.instruments)
+        title += '\nfrom '+', '.join(self.instruments)
         title += '\n'+self.titleFilename
         if not removeCompanion is None:
             title += '\ncompanion removed at X=%3.2fmas, Y=%3.2fmas, F=%3.2f%%'%(
@@ -1890,7 +1916,7 @@ class Open:
         # --
         nsmax = np.max([a['nsigma'] for a in allMin])
         # -- keep nSigma higher than half the max
-        allMin2 = filter(lambda x: x['nsigma']>nsmax/2. and a['best']['x']**2+a['best']['y']**2 > self.rmin**2, allMin)
+        allMin2 = filter(lambda x: x['nsigma']>nsmax/2. and a['best']['x']**2+a['best']['y']**2 >= self.rmin**2, allMin)
         # -- keep 5 highest nSigma
         allMin2 = [allMin[i] for i in np.argsort([c['chi2'] for c in allMin])[:5]]
         # -- keep highest nSigma
@@ -1899,12 +1925,20 @@ class Open:
         for ii, i in enumerate(np.argsort([x['chi2'] for x in allMin2])):
             print ' | BEST FIT %d: chi2=%5.2f'%(ii, allMin2[i]['chi2'])
             allMin2[i]['best']['f'] = np.abs(allMin2[i]['best']['f'] )
-            keys = ['x', 'y', 'f', 'diam*']
-            if not fitAlso is None:
-                keys.extend(fitAlso)
+            keys = allMin2[i]['best'].keys()
+            keys.remove('_k')
+            for _k in keys:
+                if _k.startswith('dwavel'): 
+                    keys.remove(_k)
+            keys = sorted(keys)
+                
             for s in keys:
-                print ' | %5s='%s, '%8.4f +- %6.4f %s'%(allMin2[i]['best'][s],
+                if s in allMin2[i]['uncer'].keys() and allMin2[i]['uncer'][s]>0:
+                    print ' | %6s='%s, '%8.4f +- %6.4f [%s]'%(allMin2[i]['best'][s],
                                                      allMin2[i]['uncer'][s], paramUnits(s))
+                else:
+                    print ' | %6s='%s, '%8.4f [%s]'%(allMin2[i]['best'][s], paramUnits(s))
+                
 
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
@@ -1938,8 +1972,8 @@ class Open:
         ax2.set_aspect('equal', 'datalim')
 
         # -- best fit parameters:
-        j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2])
-        self.bestFit = [x for x in self.allFits if x['best']['x']**2+x['best']['y']**2>self.rmin**2][j]
+        j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>=self.rmin**2])
+        self.bestFit = [x for x in self.allFits if x['best']['x']**2+x['best']['y']**2>=self.rmin**2][j]
         self.bestFit['best'].pop('_k')
         self.bestFit['nsigma'] = _nSigmas(self.chi2_UD,  self.bestFit['chi2'], self.ndata()-1)
         self.plotModel(fig=fig+1)
@@ -1972,8 +2006,8 @@ class Open:
                 print ' | %5s='%s, '%8.4f +- %6.4f %s'%(fit['best'][s], fit['uncer'][s], paramUnits(s))
         return
 
-    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=None, useMJD=True,
-                monteCarlo=False, corrSpecCha=None, nSigmaClip=3.5, addCompanion=None,
+    def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=[], useMJD=True,
+                monteCarlo=False, corrSpecCha=None, nSigmaClip=3., addCompanion=None,
                 removeCompanion=None):
         """
         boot strap fitting around a single position. By default,
@@ -2062,7 +2096,7 @@ class Open:
             mjds.extend(list(set(d[-3].flatten())))
         mjds = set(mjds)
         if len(mjds)<3 and useMJD:
-            print ' > WARning: not enough dates to bootstrap on them!'
+            print ' > Warning: not enough dates to bootstrap on them!'
             useMJD=False
 
         for i in range(N):
@@ -2109,8 +2143,6 @@ class Open:
                         data[-1][-1] = data[-1][-1]/mask[None,:]
                     else:
                         data[-1][-1] = data[-1][-1]/mask
-
-
             if p is None:
                 # -- single thread:
                 self._cb_fitFunc(_fitFunc(tmp, data, self.observables,
@@ -2126,17 +2158,17 @@ class Open:
 
         plt.close(fig)
         if CONFIG['suptitle']:
-            plt.figure(fig, figsize=(9,9))
+            plt.figure(fig, figsize=(9/1.2,9/1.2))
             plt.subplots_adjust(left=0.07, bottom=0.07,
                             right=0.98, top=0.88,
                             wspace=0.35, hspace=0.35)
             title = "CANDID: bootstrapping uncertainties, %d rounds"%N
             title += ' using '+', '.join(self.observables)
-            title += ' from '+', '.join(self.instruments)
+            title += '\nfrom '+', '.join(self.instruments)
             title += '\n'+self.titleFilename
             plt.suptitle(title, fontsize=14, fontweight='bold')
         else:
-            plt.figure(fig, figsize=(10,10))
+            plt.figure(fig, figsize=(10/1.2,10/1.2))
             plt.subplots_adjust(left=0.10, bottom=0.10,
                             right=0.98, top=0.95,
                             wspace=0.3, hspace=0.3)
@@ -2150,17 +2182,15 @@ class Open:
         y = np.array([a['best']['y'] for a in self.allFits])
         f = np.array([a['best']['f'] for a in self.allFits])
         d = np.array([a['best']['diam*'] for a in self.allFits])
-
-
-        w = np.where((x<=np.median(x) + nSigmaClip*(np.percentile(x, 84)-np.median(x)))*
-                     (x>=np.median(x) + nSigmaClip*(np.percentile(x, 16)-np.median(x)))*
-                     (y<=np.median(y) + nSigmaClip*(np.percentile(y, 84)-np.median(y)))*
-                     (y>=np.median(y) + nSigmaClip*(np.percentile(y, 16)-np.median(y)))*
-                     (f<=np.median(f) + nSigmaClip*(np.percentile(f, 84)-np.median(f)))*
-                     (f>=np.median(f) + nSigmaClip*(np.percentile(f, 16)-np.median(f)))*
-                     (d<=np.median(d) + nSigmaClip*(np.percentile(d, 84)-np.median(d)))*
-                     (d>=np.median(d) + nSigmaClip*(np.percentile(d, 16)-np.median(d)))
-                     )
+        w = np.where((x <= np.median(x) + nSigmaClip*(np.percentile(x, 84)-np.median(x)))*
+                     (x >= np.median(x) - nSigmaClip*(np.median(x)-np.percentile(x, 16)))*
+                     (y <= np.median(y) + nSigmaClip*(np.percentile(y, 84)-np.median(y)))*
+                     (y >= np.median(y) - nSigmaClip*(np.median(y)-np.percentile(y, 16)))*
+                     (f <= np.median(f) + nSigmaClip*(np.percentile(f, 84)-np.median(f)))*
+                     (f >= np.median(f) - nSigmaClip*(np.median(f)-np.percentile(f, 16)))*
+                     (d <= np.median(d) + nSigmaClip*(np.percentile(d, 84)-np.median(d)))*
+                     (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, 16)))
+                    )
         print ' | %d fits ignored'%(len(x)-len(w[0]))
 
         ax = {}
@@ -2169,7 +2199,6 @@ class Open:
             for i2,k2 in enumerate(kz):
                 X = np.array([a['best'][k1] for a in self.allFits])[w]
                 Y = np.array([a['best'][k2] for a in self.allFits])[w]
-
                 if i1<i2:
                     if i1>0:
                         ax[(i1,i2)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1,
@@ -2232,6 +2261,7 @@ class Open:
                     res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
+        self.bootRes = res
         return
         # -_-_-
     def plotModel(self, param=None, fig=3):
@@ -2265,7 +2295,7 @@ class Open:
                                 self._chi2Data), param)
 
         plt.close(fig)
-        plt.figure(fig, figsize=(11,8))
+        plt.figure(fig, figsize=(11/1.2,8/1.2))
         plt.clf()
         N = len(set(_types))
         for i,t in enumerate(set(_types)):
@@ -2280,34 +2310,26 @@ class Open:
                 _measw = np.angle(_meas[w]).real
                 _modw = np.angle(_mod[w]).real
 
-                plt.plot(_uv[w], np.mod(_modw+np.pi/2, np.pi)-np.pi/2, '.k', alpha=0.1)
-                plt.scatter(_uv[w], np.mod(_measw+np.pi/2,np.pi)-np.pi/2, c=_wl[w],
-                            marker='o', cmap='hot_r', alpha=0.5)
-                plt.errorbar(_uv[w], np.mod(_measw+np.pi/2, np.pi)-np.pi/2,
-                            fmt=',', yerr=_errs[w], marker=None, color='k', alpha=0.2)
-                plt.ylabel(t.split(';')[0]+r': angle, mod $\pi$')
-
-                # for z in [-2,0,2]:
-                #     plt.plot(_uv[w], _mod[w]+z*np.pi, '.k', alpha=0.1)
-                #     plt.scatter(_uv[w], _meas[w]+z*np.pi, c=_wl[w],
-                #                 marker='o', cmap='hot_r', alpha=0.5)
-                #     plt.errorbar(_uv[w], _meas[w]+z*np.pi, fmt=',', yerr=_errs[w],
-                #                 marker=None, color='k', alpha=0.2)
-                #
-                # plt.ylim(-np.max(np.abs(_meas[w]+_errs[w])),
-                #           np.max(np.abs(_meas[w]+_errs[w])))
+                plt.plot(_uv[w], 180/np.pi*(np.mod(_modw+np.pi/2, np.pi)-np.pi/2),
+                        '.r', alpha=0.4)
+                plt.scatter(_uv[w], 180/np.pi*(np.mod(_measw+np.pi/2,np.pi)-np.pi/2),
+                            c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
+                plt.errorbar(_uv[w], 180/np.pi*(np.mod(_measw+np.pi/2, np.pi)-np.pi/2),
+                            fmt=',', yerr=180/np.pi*_errs[w], marker=None, color='k', alpha=0.2)
+                plt.ylabel(t.split(';')[0]+r': deg, mod 180')
             else:
                 res = (_meas[w]-_mod[w])/_errs[w]
                 plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
                              color='k', alpha=0.2)
                 plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
-                plt.plot(_uv[w], _mod[w], '.k', alpha=0.2)
+                plt.plot(_uv[w], _mod[w], '.r', alpha=0.4)
                 plt.ylabel(t.split(';')[0])
 
             # -- residuals
             plt.subplot(2,N,i+1+N, sharex=ax1)
             plt.plot(_uv[w], res, '.k', alpha=0.5)
-            plt.xlabel('B/$\lambda$')
+            plt.xlabel('Bmax / $\lambda$')
+
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
         return
@@ -2425,8 +2447,8 @@ class Open:
             print " | Method:", method
             print ''
             self.f3s = np.zeros((N,N))
-            self.f3s[allX[None,:]**2+allY[:,None]**2 >= self.rmax**2] = -1
-            self.f3s[allX[None,:]**2+allY[:,None]**2 <= self.rmin**2] = -1
+            self.f3s[allX[None,:]**2+allY[:,None]**2 > self.rmax**2] = -1
+            self.f3s[allX[None,:]**2+allY[:,None]**2 < self.rmin**2] = -1
             self._prog = 0.0
             self._progTime = [time.time(), time.time()]
             # -- parallel treatment:
@@ -2465,7 +2487,7 @@ class Open:
             vmin, vmax = None, None
             plt.close(fig)
             if CONFIG['suptitle']:
-                plt.figure(fig, figsize=(11,10))
+                plt.figure(fig, figsize=(11/1.2,10/1.2))
                 plt.subplots_adjust(top=0.85, bottom=0.08,
                                     left=0.08, right=0.97)
                 title = "CANDID: flux ratio for 3$\sigma$ detection, "
@@ -2482,7 +2504,7 @@ class Open:
 
                 plt.suptitle(title, fontsize=14, fontweight='bold')
             else:
-                plt.figure(fig, figsize=(11,9))
+                plt.figure(fig, figsize=(11/1.2,9/1.2))
                 plt.subplots_adjust(top=0.95, bottom=0.08,
                                     left=0.08, right=0.97)
             for i,m in enumerate(methods):
@@ -2501,7 +2523,7 @@ class Open:
 
         else:
             plt.close(fig)
-            plt.figure(fig, figsize=(8,5))
+            plt.figure(fig, figsize=(8/1.2,5/1.2))
 
         # -- radial profile:
         r = np.sqrt(X**2+Y**2).flatten()
@@ -2510,10 +2532,12 @@ class Open:
             r_f3s[k] = self.allf3s[k].flatten()[np.argsort(r)]
         r = r[np.argsort(r)]
         for k in r_f3s.keys():
-            r_f3s[k] = r_f3s[k][(r<self.rmax)*(r>self.rmin)]
-        r = r[(r<self.rmax)*(r>self.rmin)]
+            r_f3s[k] = r_f3s[k][(r<=self.rmax)*(r>=self.rmin)]
+        r = r[(r<=self.rmax)*(r>=self.rmin)]
+
         self._detectLim = {'r': r}
         for m in methods:
+
             self._detectLim[m+'_99_M'] = -2.5*np.log10(sliding_percentile(r, r_f3s[m],
                                     self.rmax/float(N), 99)/100.)
 
