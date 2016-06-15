@@ -47,7 +47,8 @@ import sys
 #__version__ = '0.18 | 2015/10/26' # change in injection with a simpler algorithm;
                                   # change a bit in detectionLimit with injeciton,
                                   # doing a UD fit now; auto smearing setting
-__version__ = '0.19 | 2015/12/26' # adding instrument selection
+#__version__ = '0.19 | 2015/12/26' # adding instrument selection
+__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
 
 
 print """
@@ -66,6 +67,7 @@ CONFIG = {'color map':'cubehelix', # color map used
           'progress bar': True,
           'Ncores': None, # default is to use N-1 Cores
           'Nsmear': 4,
+          'algo': 'numpy', # numpy / weave
           }
 
 # -- units of the parameters
@@ -73,7 +75,7 @@ def paramUnits(s):
     if 'dwavel' in s:
         return 'um'
     else:
-        return {'x':'mas', 'y':'mas', 'f':'% primary', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none', 
+        return {'x':'mas', 'y':'mas', 'f':'% primary', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none',
                 'fres':'% primary'}[s]
 
 def variables():
@@ -104,7 +106,7 @@ def _Vld(base, diam, wavel, alpha=0.36):
     x = -1.*(np.pi*diam*base/wavel/1.e-6)**2/4.
     V_ = 0
     for k_ in range(50):
-        V_ += scipy.special.gamma(nu+1.)/\
+        V_ += scipy.special.gamma(nu + 1.)/\
              scipy.special.gamma(nu + 1.+k_)/\
              scipy.special.gamma(k_ + 1.) *x**k_
     return V_
@@ -115,17 +117,22 @@ def _VbinSlow(uv, param):
     disk diameter and an unresolved source. "param" is a dictionnary
     containing:
 
-    'diam*': in mas
+    'diam*' : in mas
     'alpha*': optional LD coef for main star
-    'wavel': in um
-    'x, y': in mas
-    'f': flux ratio in % -> takes the absolute value
-
+    'wavel' : in um
+    'x, y'  : in mas
+    'f'     : flux ratio in % -> takes the absolute value
+    'fres'  : flux resolu
     """
     if 'f' in param.keys():
         f = np.abs(param['f'])/100.
     else:
-        f = 1/100.
+        f = 0/100.
+    if 'fres' in param.keys():
+        fres = param['fres']/100.0
+    else:
+        fres = 0
+
 
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
@@ -137,7 +144,7 @@ def _VbinSlow(uv, param):
     if 'diamc' in param.keys():
         Vcomp = _Vud(B, param['diamc'], param['wavel'])+0j
     else:
-        Vcomp = 1.0 +0j # -- assumes it is unresolved.
+        Vcomp = 1.0 + 0j # -- assumes it is unresolved.
 
     if False:
         #print 'sinc approx'
@@ -160,8 +167,46 @@ def _VbinSlow(uv, param):
             wl = param['wavel']+_l*param['dwavel']
             phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/wl
             tmp += Vcomp*np.exp(-1j*phi)/5.
-        res = (Vstar + f*tmp)/(1.0+f)
+        res = (Vstar + f*tmp)/(1.0 + f + fres)
     return res
+
+def _V2binSlow(uv, param):
+    """
+    using weave
+    uv = (u,v) where u,v a are ndarray
+
+    param MUST contain:
+    - diam*, x, y: in mas
+    - f: in %
+    - wavel: in um
+
+    optional:
+    - diamc: in mas
+    - dwavel: in um
+    - fres: fully resolved flux, in fraction of primary flux
+    """
+    return np.abs(_VbinSlow(uv, param))**2
+
+def _T3binSlow(uv, param):
+    """
+    using weave
+    uv = (u1,v1, u2, v2) where u1,v1, u2,v2 a are ndarray
+
+    param MUST contain:
+    - diam*, x, y: in mas
+    - f: in %
+    - wavel: in um
+
+    optional:
+    - diamc: in mas
+    - dwavel: in um
+    - fres: unresolved flux, in fraction of primary flux
+
+    """
+    V1 = _VbinSlow((uv[0], uv[1]), param)
+    V2 = _VbinSlow((uv[2], uv[3]), param)
+    V3 = _VbinSlow((uv[0]+uv[2], uv[1]+uv[3]), param)
+    return V1*V2*np.conj(V3)
 
 def _approxVUD(x='x', maxM=8):
     """
@@ -172,6 +217,7 @@ def _approxVUD(x='x', maxM=8):
     return ['%s%s/%.1f'%(' -' if (-1)**m < 0 else ' +',
                         '*'.join(x*(n+2*m-1)) if (n+2*m-1)>0 else '1',
                          cm(m)) for m in range(maxM+1)]
+
 
 # -- set the approximation for UD visibility
 _VUDX = ''.join(_approxVUD('X', maxM=7)).strip()
@@ -189,7 +235,7 @@ if False: # -- check approximation
     plt.ylabel('visibility')
     plt.subplot(212)
     plt.plot(x, 100*(2*scipy.special.j1(x)/x-_VUDXeval(x))/(
-                scipy.special.j1(x)/x+_VUDXeval(x)/2.), '-k')
+                     scipy.special.j1(x)/x+_VUDXeval(x)/2.), '-k')
     plt.ylabel('rel. err. %')
     plt.xlabel(r'$\pi$ B $\theta$ / $\lambda$')
     plt.ylim(-1,1)
@@ -211,6 +257,7 @@ def _V2binFast(uv, param):
     - fres: fully resolved flux, in fraction of primary flux
     """
     u, v = uv
+    B = np.sqrt(u**2+v**2)
     s = u.shape
     u, v = u.flatten(), v.flatten()
     NU = len(u)
@@ -226,35 +273,35 @@ def _V2binFast(uv, param):
         wavel = np.ones(NU)*wavel
 
     if 'x' in param.keys():
-        x = float(param['x'])
+        x = param['x']*1.0
     else:
         x = 0.0
 
     if 'y' in param.keys():
-        y = float(param['y'])
+        y = param['y']*1.0
     else:
         y = 0.0
 
     if 'f' in param.keys():
-        f = float(np.abs(param['f']))
+        f = np.abs(param['f'])*1.0
         #f = min(f, 1.0)
     else:
         f = 0.0
 
     if 'diamc' in param.keys():
-        diamc = np.abs(float(param['diamc']))
+        diamc = np.abs(param['diamc'])*1.0
     else:
         diamc = 0.0
 
     if 'dwavel' in param.keys():
-        dwavel = float(param['dwavel'])
+        dwavel = param['dwavel']*1.0
     else:
         dwavel = 0.0
     if __warningDwavel and dwavel==0:
         print ' >>> WARNING: no spectral bandwidth provided!'
 
     if 'fres' in param.keys():
-        fres = float(param['fres'])
+        fres = param['fres']*1.0
     else:
         fres = 0.0
 
@@ -264,49 +311,49 @@ def _V2binFast(uv, param):
 
     code = u"""
     int i, j;
-    double B, vis, X, pi, phi, visc, wl, t_vr, t_vi;
+    double vis, X, pi, phi, visc, wl, t_vr, t_vi, c;
 
     pi = 3.1415926535;
+    c = 0.004848136;
     f /= 100.0; /* flux ratio given in % */
     if (f>1){
         f = 1.0;
         }
     fres /= 100.0; /* flux ratio given in % */
-    
+
     phi = 0.0;
     /* -- companion visibility, default is unresoved (V=1) */
     visc = 1.0;
     vis = 1.0;
     for (i=0; i<NU; i++){
         /* -- primary star of V_UD */
-        B = sqrt(u[i]*u[i] + v[i]*v[i]);
-        phi = -2*pi*0.004848136*(u[i]*x + v[i]*y);
+        phi = -2*pi*c*(u[i]*x + v[i]*y);
 
         if (Nsmear<2){
             if (diam>0){
-                X = pi*0.004848136*B*diam/wavel[i];
+                X = pi*c*B[i]*diam/wavel[i];
                 vis = VUDX;
             }
             if (diamc>0) {
-                X = pi*0.004848136*B*diamc/wavel[i];
+                X = pi*c*B[i]*diamc/wavel[i];
                 visc = VUDX;
                 }
-            vr[i] = vis/(1+f+fres) + f * visc * cos( phi/wavel[i] ) / (1+f+fres);
-            vi[i] = f * visc * sin( phi/wavel[i] ) / (1+f+fres);
+            vr[i] = vis/(1.0+f+fres) + f * visc * cos( phi/wavel[i] ) / (1.0 + f + fres);
+            vi[i] = f * visc * sin( phi/wavel[i] ) / (1.0 + f + fres);
             v2[i] = vr[i]*vr[i] + vi[i]*vi[i];
         } else {
         for (j=0;j<Nsmear;j++) {
-            wl = wavel[i]+(-0.5+j/(Nsmear-1.0))*dwavel;
+            wl = wavel[i]+(-0.5 + j/(Nsmear-1.0))*dwavel;
             if (diam>0){
-                X = pi*0.004848136*B*diam/wl;
+                X = pi*c*B[i]*diam/wl;
                 vis = VUDX;
             }
             if (diamc>0) {
-                X = pi*0.004848136*B*diamc/wl;
+                X = pi*c*B[i]*diamc/wl;
                 visc = VUDX;
                 }
-            t_vr = (vis + f * visc * cos(phi/wl) ) / (1.+f+fres);
-            t_vi = (0.0 + f * visc * sin(phi/wl) ) / (1.+f+fres);
+            t_vr = (vis + f * visc * cos(phi/wl) ) / (1.0 + f + fres);
+            t_vi = (0.0 + f * visc * sin(phi/wl) ) / (1.0 + f + fres);
 
             vr[i] += t_vr / Nsmear;
             vi[i] += t_vi / Nsmear;
@@ -314,9 +361,10 @@ def _V2binFast(uv, param):
             }
         }
     }""".replace('VUDX', _VUDX)
-    err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc',
-                              'wavel','dwavel','vr','vi', 'v2', 'Nsmear', 'fres'],
-                       compiler = 'gcc')
+    err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc','B',
+                              'wavel','dwavel','vr','vi', 'v2', 'Nsmear','fres'],
+                       compiler = 'gcc', verbose=0, extra_compile_args=['-O3'],
+                       headers=['<algorithm>', '<limits>'])
     v2 = v2.reshape(s)
     return v2
 
@@ -401,12 +449,13 @@ def _T3binFast(uv, param):
     double u12, v12;
     double B12, vis12, phi12, visc12, vr12, vi12;
 
-    double X, pi, wl;
+    double X, pi, wl, c;
     pi = 3.1415926535;
+    c = 0.004848136;
     f /= 100.; /* flux ratio given in % */
     if (f>1) {f = 1.0;}
     fres /= 100.; /* flux ratio given in % */
-    
+
     phi1  = 0.0;
     phi2  = 0.0;
     phi12 = 0.0;
@@ -436,20 +485,20 @@ def _T3binFast(uv, param):
         if (Nsmear<2) { /* -- monochromatic */
             if (diam>0) {
                 /* -- approximation of V_UD */
-                X = pi*0.004848136*B1*diam/wavel[i];
+                X = pi*c*B1*diam/wavel[i];
                 vis1 = VUDX;
-                X = pi*0.004848136*B2*diam/wavel[i];
+                X = pi*c*B2*diam/wavel[i];
                 vis2 = VUDX;
-                X = pi*0.004848136*B12*diam/wavel[i];
+                X = pi*c*B12*diam/wavel[i];
                 vis12 = VUDX;
             }
             if (diamc>0) {
                 /* -- approximation of V_UD */
-                X = pi*0.004848136*B1*diamc/wavel[i];
+                X = pi*c*B1*diamc/wavel[i];
                 visc1 = VUDX;
-                X = pi*0.004848136*B2*diamc/wavel[i];
+                X = pi*c*B2*diamc/wavel[i];
                 visc2 = VUDX;
-                X = pi*0.004848136*B12*diamc/wavel[i];
+                X = pi*c*B12*diamc/wavel[i];
                 visc12 = VUDX;
                 }
 
@@ -481,20 +530,20 @@ def _T3binFast(uv, param):
                 wl = wavel[i] + (-0.5 + j/(Nsmear-1.0)) * dwavel;
                 if (diam>0) {
                     /* -- approximation of V_UD */
-                    X = pi*0.004848136*B1*diam/wl;
+                    X = pi*c*B1*diam/wl;
                     vis1 = VUDX;
-                    X = pi*0.004848136*B2*diam/wl;
+                    X = pi*c*B2*diam/wl;
                     vis2 = VUDX;
-                    X = pi*0.004848136*B12*diam/wl;
+                    X = pi*c*B12*diam/wl;
                     vis12 = VUDX;
                 }
                 if (diamc>0) {
                     /* -- approximation of V_UD */
-                    X = pi*0.004848136*B1*diamc/wl;
+                    X = pi*c*B1*diamc/wl;
                     visc1 = VUDX;
-                    X = pi*0.004848136*B2*diamc/wl;
+                    X = pi*c*B2*diamc/wl;
                     visc2 = VUDX;
-                    X = pi*0.004848136*B12*diamc/wl;
+                    X = pi*c*B12*diamc/wl;
                     visc12 = VUDX;
                     }
 
@@ -520,7 +569,7 @@ def _T3binFast(uv, param):
     }""".replace('VUDX', _VUDX)
     err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y', 'fres',
                               'f','diamc','wavel','dwavel','t3r','t3i','Nsmear'],
-                       compiler = 'gcc')
+                       compiler = 'gcc', verbose=0)
     res = t3r + 1j*t3i
     res = res.reshape(s)
     return res
@@ -578,7 +627,10 @@ def _modelObservables(obs, param, flattened=True):
         if o[0].split(';')[0]=='v2':
             tmp['wavel'] = o[3]
             tmp['dwavel'] = dwavel
-            res[i] = _V2binFast([o[1], o[2]], tmp)
+            if CONFIG['algo']=='weave':
+                res[i] = _V2binFast([o[1], o[2]], tmp)
+            else:
+                res[i] = _V2binSlow([o[1], o[2]], tmp)
         elif o[0].split(';')[0].startswith('v2_'): # polynomial fit
             p = int(o[0].split(';')[0].split('_')[1])
             n = int(o[0].split(';')[0].split('_')[2])
@@ -587,7 +639,7 @@ def _modelObservables(obs, param, flattened=True):
             _v2 = []
             for _l in _wl:
                 tmp['wavel']=_l
-                _v2.append(_V2binFase([o[1], o[2]], tmp))
+                _v2.append(_V2binFast([o[1], o[2]], tmp))
             _v2 = np.array(_v2)
             res[i] = np.array([np.polyfit(_wl-o[-4][1], _v2[:,j], n)[n-p]
                                 for j in range(_v2.shape[1])])
@@ -596,7 +648,11 @@ def _modelObservables(obs, param, flattened=True):
             o[0].split(';')[0]=='icp':
             tmp['wavel'] = o[5]
             tmp['dwavel'] = dwavel
-            t3 = _T3binFast((o[1], o[2], o[3], o[4]), tmp)
+            if CONFIG['algo']=='weave':
+                t3 = _T3binFast((o[1], o[2], o[3], o[4]), tmp)
+            else:
+                t3 = _T3binSlow((o[1], o[2], o[3], o[4]), tmp)
+
             if o[0].split(';')[0]=='cp':
                 res[i] = np.angle(t3)
             elif o[0].split(';')[0]=='icp':
@@ -627,7 +683,6 @@ def _modelObservables(obs, param, flattened=True):
         res2 = np.append(res2, r.flatten())
 
     return res2
-
 
 def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
     """
@@ -719,22 +774,23 @@ def _fitFunc(param, chi2Data, observables, instruments, fitAlso=[], doNotFit=[])
                                                     instruments)
     # -- guess what needs to be fitted
     fitOnly=[]
-    
+
     if param['f']!=0:
-        fitOnly.extend(['x', 'y', 'f'])        
-    
+        fitOnly.extend(['x', 'y', 'f'])
+
     if 'v2' in observables or 't3' in observables:
        for k in ['diam*', 'diamc', 'fres']:
            if k in param.keys():
                fitOnly.append(k)
-        
+
     if not fitAlso is None:
         fitOnly.extend(fitAlso)
-    
+
     fitOnly = list(set(fitOnly))
     for f in doNotFit:
-        fitOnly.remove(f)
-    
+        if f in fitOnly:
+            fitOnly.remove(f)
+
     #print param, fitOnly, doNotFit
 
     # -- does the actual fit
@@ -817,7 +873,7 @@ def _detectLimit(param, chi2Data, observables, instruments, delta=None, method='
             tmp = {k:(param[k] if k!='f' else 0.0) for k in param.keys()} # -- UD
             if 'v2' in observables or 't3' in observables:
                 fit = _fitFunc(tmp, data, observables, instruments,
-                        doNotFit=filter(lambda k: k!='diam*', tmp.keys()))
+                               doNotFit=filter(lambda k: k!='diam*', tmp.keys()))
                 a = fit['chi2']
             else:
                 a = None
@@ -1603,7 +1659,7 @@ class Open:
         return
 
     def fitMap(self, step=None,  fig=1, addfits=False, addCompanion=None,
-               removeCompanion=None, rmin=None, rmax=None, fratio=2.0, 
+               removeCompanion=None, rmin=None, rmax=None, fratio=2.0,
                doNotFit=[], addParam={}):
         """
         - filename: a standard OIFITS data file
@@ -1702,7 +1758,7 @@ class Open:
         for y in Y:
             for x in X:
                 if x**2+y**2>=self.rmin**2 and x**2+y**2<=self.rmax**2:
-                    tmp={'diam*': 0.0, 'f':fratio, 'x':x, 'y':y, '_k':k, 
+                    tmp={'diam*': 0.0, 'f':fratio, 'x':x, 'y':y, '_k':k,
                          'alpha*':self.alpha}
                     for _k in self.dwavel.keys():
                         tmp['dwavel;'+_k] = self.dwavel[_k]
@@ -1712,12 +1768,12 @@ class Open:
                     if p is None:
                         # -- single thread:
                         self._cb_fitFunc(_fitFunc(params[-1], self._chi2Data,
-                                                  self.observables, self.instruments, 
+                                                  self.observables, self.instruments,
                                                   None, doNotFit))
                     else:
                         # -- multiple threads:
                         p.apply_async(_fitFunc, (params[-1], self._chi2Data,
-                                                 self.observables, self.instruments, 
+                                                 self.observables, self.instruments,
                                                  None, doNotFit),
                                                  callback=self._cb_fitFunc)
                     k += 1
@@ -1928,17 +1984,17 @@ class Open:
             keys = allMin2[i]['best'].keys()
             keys.remove('_k')
             for _k in keys:
-                if _k.startswith('dwavel'): 
+                if _k.startswith('dwavel'):
                     keys.remove(_k)
             keys = sorted(keys)
-                
+
             for s in keys:
                 if s in allMin2[i]['uncer'].keys() and allMin2[i]['uncer'][s]>0:
                     print ' | %6s='%s, '%8.4f +- %6.4f [%s]'%(allMin2[i]['best'][s],
                                                      allMin2[i]['uncer'][s], paramUnits(s))
                 else:
                     print ' | %6s='%s, '%8.4f [%s]'%(allMin2[i]['best'][s], paramUnits(s))
-                
+
 
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
