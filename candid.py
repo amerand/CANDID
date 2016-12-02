@@ -48,8 +48,8 @@ import sys
                                   # change a bit in detectionLimit with injeciton,
                                   # doing a UD fit now; auto smearing setting
 #__version__ = '0.19 | 2015/12/26' # adding instrument selection
-__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
-
+#__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
+__version__ = '0.21 | 2016/11/22' # some cleaning
 
 print """
 ========================== This is CANDID ==============================
@@ -133,7 +133,6 @@ def _VbinSlow(uv, param):
     else:
         fres = 0
 
-
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
     if 'alpha*' in param.keys() and param['alpha*']>0.0:
@@ -185,6 +184,8 @@ def _V2binSlow(uv, param):
     - dwavel: in um
     - fres: fully resolved flux, in fraction of primary flux
     """
+    if 'f' in param.keys():
+        param['f'] = min(np.abs(param['f']),100)
     return np.abs(_VbinSlow(uv, param))**2
 
 def _T3binSlow(uv, param):
@@ -203,6 +204,8 @@ def _T3binSlow(uv, param):
     - fres: unresolved flux, in fraction of primary flux
 
     """
+    if 'f' in param.keys():
+        param['f'] = min(np.abs(param['f']),100)
     V1 = _VbinSlow((uv[0], uv[1]), param)
     V2 = _VbinSlow((uv[2], uv[3]), param)
     V3 = _VbinSlow((uv[0]+uv[2], uv[1]+uv[3]), param)
@@ -925,17 +928,19 @@ def _detectLimit(param, chi2Data, observables, instruments, delta=None, method='
 class Open:
     global CONFIG, _ff2_data
     def __init__(self, filename, rmin=None, rmax=None,  reducePoly=None,
-                wlOffset=0.0, alpha=0.0, v2bias = 1.):
+                 wlOffset=0.0, alpha=0.0, v2bias = 1., instruments=None):
         """
         - filename: an OIFITS file
         - rmin, rmax: minimum and maximum radius (in mas) for plots and search
         - wlOffset (in um) will be *added* to the wavelength table. Mainly for AMBER in LR-HK
         - alpha: limb darkening coefficient
+        - instruments: load only certain instruments from the OIfiles (faster)
 
         load OIFITS file assuming one target, one OI_VIS2, one OI_T3 and one WAVE table
         """
         self.wlOffset = wlOffset # mainly to correct AMBER poor wavelength calibration...
         self.v2bias = v2bias
+        self.loadOnlyInstruments = instruments
         if isinstance(filename, list):
             self._initOiData()
             for i,f in enumerate(filename):
@@ -1108,10 +1113,14 @@ class Open:
                 self._dataheader[k] = self._fitsHandler[0].header['INJCOMP'+k]
             except:
                 pass
+        if self.loadOnlyInstruments is None:
+            testInst = lambda h: True
+        else:
+            testInst = lambda h: h.header['INSNAME'] in self.loadOnlyInstruments
 
         # -- load Wavelength and Array: ----------------------------------------------
         for hdu in self._fitsHandler[1:]:
-            if hdu.header['EXTNAME']=='OI_WAVELENGTH':
+            if hdu.header['EXTNAME']=='OI_WAVELENGTH' and testInst(hdu):
                 self.wavel[hdu.header['INSNAME']] = self.wlOffset + hdu.data['EFF_WAVE']*1e6 # in um
                 self.wavel_3m[hdu.header['INSNAME']] = (self.wavel[hdu.header['INSNAME']].min(),
                                                         self.wavel[hdu.header['INSNAME']].mean(),
@@ -1145,14 +1154,14 @@ class Open:
 
         amberAtmBand = [1.0, 1.35, 1.87]
         for hdu in self._fitsHandler[1:]:
-            if hdu.header['EXTNAME'] in ['OI_T3', 'OI_VIS2']:
+            if hdu.header['EXTNAME'] in ['OI_T3', 'OI_VIS2'] and testInst(hdu):
                 ins = hdu.header['INSNAME']
                 arr = hdu.header['ARRNAME']
                 # if 'AMBER' in ins:
                 #     print ' > Warning - AMBER: rejecting WL<%3.1fum'%amberWLmin
                 #     print ' > Warning - AMBER: rejecting WL>%3.1fum'%amberWLmax
 
-            if hdu.header['EXTNAME']=='OI_T3':
+            if hdu.header['EXTNAME']=='OI_T3' and testInst(hdu):
                 # -- CP
                 data = hdu.data['T3PHI']*np.pi/180
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
@@ -1253,7 +1262,7 @@ class Open:
                 maxRes = max(maxRes, Bmax/self.wavel[ins].min())
                 self.smearFov = min(self.smearFov, 2*self.wavel[ins].min()**2/self.dwavel[ins]/Bmax*180*3.6/np.pi)
                 self.diffFov = min(self.diffFov, 1.2*self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
-            if hdu.header['EXTNAME']=='OI_VIS2':
+            if hdu.header['EXTNAME']=='OI_VIS2' and testInst(hdu):
                 data = hdu.data['VIS2DATA']
                 if len(data.shape)==1:
                     data = np.array([np.array([d]) for d in data])
