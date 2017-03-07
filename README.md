@@ -23,8 +23,7 @@ There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu
 The code has *not* been deeply error proofed. If you encounter problems or bugs, do not hesitate to contact the developpers.
 
 * **The (non-)detection levels are given assuming the errors bars in the data are uncorrelated**. This is of course not the case for real data, in particular when a lot of spectral channels are present.
-* The code works only with a single OIFITS file. You will need an external tool to combine OIFITS files
-* The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present.
+* The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present. Several OIFITS files can be loaded at once (giving a list of files).
 * The UD visibility is computed using a polynomial approximation, so only first and second lobe visibilities for the primary can be handled. That should be enough but migh lead to some (unknown yet) side effects.
 * The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
 * The code can take lots of memory because it stores lots of intermediate results, so using a 64bit python is advisable.
