@@ -19,9 +19,10 @@ import time
 import scipy.special
 import scipy.interpolate
 import scipy.stats
-from scipy import weave
-from scipy.weave import converters
-from scipy.weave import blitz_tools
+# -- defunct
+#from scipy import weave
+#from scipy.weave import converters
+#from scipy.weave import blitz_tools
 
 from scipy.misc import factorial
 
