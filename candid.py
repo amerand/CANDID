@@ -21,21 +21,26 @@ import scipy.interpolate
 import scipy.stats
 from scipy import weave
 from scipy.weave import converters
+from scipy.weave import blitz_tools
+
 from scipy.misc import factorial
 
 import multiprocessing
 import os
 import sys
 
+#import cvis
+#from numba.decorators import jit
+
 #__version__ = '0.1 | 2014/11/25'
-#__version__ = '0.2 | 2015/01/07' # big clean
-#__version__ = '0.3 | 2015/01/14' # add Alex contrib and FLAG taken into account
-#__version__ = '0.4 | 2015/01/30' # modified bandwidth smearing handling
-#__version__ = '0.5 | 2015/02/01' # field of view, auto rmin/rmax, bootstrapping
-#__version__ = '0.6 | 2015/02/10' # bug fix in smearing
-#__version__ = '0.7 | 2015/02/17' # bug fix in T3 computation
-#__version__ = '0.8 | 2015/02/19' # can load directories instead of single files, AMBER added, ploting V2, CP
-#__version__ = '0.9 | 2015/02/25' # adding polynomial reduction (as function of wavelength) to V2 et CP
+#__version__ = '0.2 | 2015/01/07'  # big clean
+#__version__ = '0.3 | 2015/01/14'  # add Alex contrib and FLAG taken into account
+#__version__ = '0.4 | 2015/01/30'  # modified bandwidth smearing handling
+#__version__ = '0.5 | 2015/02/01'  # field of view, auto rmin/rmax, bootstrapping
+#__version__ = '0.6 | 2015/02/10'  # bug fix in smearing
+#__version__ = '0.7 | 2015/02/17'  # bug fix in T3 computation
+#__version__ = '0.8 | 2015/02/19'  # can load directories instead of single files, AMBER added, ploting V2, CP
+#__version__ = '0.9 | 2015/02/25'  # adding polynomial reduction (as function of wavelength) to V2 et CP
 #__version__ = '0.10 | 2015/08/14' # adding LD coef and coding CP in iCP
 #__version__ = '0.11 | 2015/09/03' # changing detection limits to 99% and Mag instead of %
 #__version__ = '0.12 | 2015/09/17' # takes list of files; bestFit cannot be out rmin/rmax
@@ -45,11 +50,13 @@ import sys
 #__version__ = '0.16 | 2015/10/22' # weave to accelerate the binary visibility!
 #__version__ = '0.17 | 2015/10/24' # weave to accelerate the binary T3!
 #__version__ = '0.18 | 2015/10/26' # change in injection with a simpler algorithm;
-                                  # change a bit in detectionLimit with injeciton,
-                                  # doing a UD fit now; auto smearing setting
+                                   # change a bit in detectionLimit with injeciton,
+                                   # doing a UD fit now; auto smearing setting
 #__version__ = '0.19 | 2015/12/26' # adding instrument selection
 #__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
-__version__ = '0.21 | 2016/11/22' # some cleaning
+#__version__ = '0.21 | 2016/11/22' # some cleaning
+__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
+
 
 print """
 ========================== This is CANDID ==============================
@@ -75,8 +82,10 @@ def paramUnits(s):
     if 'dwavel' in s:
         return 'um'
     else:
-        return {'x':'mas', 'y':'mas', 'f':'% primary', 'diam*':'mas', 'diamc':'mas', 'alpha*': 'none',
-                'fres':'% primary'}[s]
+        if s.startswith('f_') or s.startswith('fres_'):
+            return '% primary'
+        return {'x':'mas', 'y':'mas', 'f':'% primary', 'diam*':'mas',
+                'diamc':'mas', 'alpha*': 'none', 'fres':'% primary'}[s]
 
 def variables():
     print ' | global parameters (can be updated):'
@@ -117,21 +126,48 @@ def _VbinSlow(uv, param):
     disk diameter and an unresolved source. "param" is a dictionnary
     containing:
 
-    'diam*' : in mas
-    'alpha*': optional LD coef for main star
-    'wavel' : in um
-    'x, y'  : in mas
-    'f'     : flux ratio in % -> takes the absolute value
-    'fres'  : flux resolu
+    'diam*'   : in mas
+    'alpha*'  : optional LD coef for main star
+    'wavel'   : in um
+    'x, y'    : in mas
+    'f'       : flux ratio in % -> takes the absolute value
+    'f_wl_dwl': addition flux ratio in the line at wl, width dwl
+    'fres'    : resolved flux
+    'fres_wl_dwl': addition resolved flux ratio in the line at wl, width dwl
+
+    'xg', yg', 'diamg', 'fg': gaussian position, diameters and flux
+
     """
     if 'f' in param.keys():
         f = np.abs(param['f'])/100.
     else:
         f = 0/100.
+    for f_ in param.keys():
+        if f_.startswith('f_'):
+            wl = float(f_.split('_')[1])
+            dwl = float(f_.split('_')[2])
+            f += param[f_]*np.exp(-4*np.log(2)*(param['wavel']-wl)**2/dwl**2)/100.
+
     if 'fres' in param.keys():
         fres = param['fres']/100.0
     else:
         fres = 0
+
+    for f_ in param.keys():
+        if f_.startswith('fres_'):
+            wl = float(f_.split('_')[1])
+            dwl = float(f_.split('_')[2])
+            fres += param[f_]*np.exp(-4*np.log(2)*(param['wavel']-wl)**2/dwl**2)/100.
+
+    if 'fg' in param.keys():
+        fg = param['fg']/100.0
+    else:
+        fg = 0.
+    for f_ in param.keys():
+        if f_.startswith('fg_'):
+            wl = float(f_.split('_')[1])
+            dwl = float(f_.split('_')[2])
+            fg += param[f_]*np.exp(-4*np.log(2)*(param['wavel']-wl)**2/dwl**2)/100.
 
     c = np.pi/180/3600000.*1e6
     B = np.sqrt(uv[0]**2+uv[1]**2)
@@ -145,28 +181,50 @@ def _VbinSlow(uv, param):
     else:
         Vcomp = 1.0 + 0j # -- assumes it is unresolved.
 
-    if False:
-        #print 'sinc approx'
-        # -- bandwidth smearing approx
-        phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/param['wavel']
-        Vcomp *= np.exp(-1j*phi)
-        # -- Alex's formula to take into account the bandwith smearing
-        # -- >>> Only works for V and V2, not for CP ??? -> TBD
-        if 'dwavel' in param.keys():
-            x = phi*param['dwavel']/param['wavel']/2.
-            x += 1e-6*(x==0)
-            c = np.sin(x)/x
-            #c = 2*scipy.special.j1(x)/x
+    if 'diamg' in param.keys():
+        Vg = np.exp(-(np.pi*c*param['diamg']*B/param['wavel'])**2/(4*np.log(2)))
+        if 'xg' in param.keys():
+            phig = 2*np.pi*c*(uv[0]*param['xg']+uv[1]*param['yg'])
+            phig = 0.0
         else:
-            c = 1.0
-        res = (Vstar + c*f*Vcomp)/(1.0+f)
+            phig = 0.0
     else:
-        tmp = 0.0
-        for _l in [-0.5, -0.17, 0.17, 0.5, ]:
-            wl = param['wavel']+_l*param['dwavel']
-            phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/wl
-            tmp += Vcomp*np.exp(-1j*phi)/5.
-        res = (Vstar + f*tmp)/(1.0 + f + fres)
+        Vg = 0.0
+        fg = 0.0
+        phig = 0.0
+
+    dl = np.linspace(-0.5,0.5, CONFIG['Nsmear'])
+
+    if CONFIG['Nsmear']<2:
+        dl = np.array([0.])
+    if np.isscalar(param['wavel'] ):
+        wl = param['wavel']+dl*param['dwavel']
+        phi = 2*np.pi*c*(uv[0][:,None]*param['x']+uv[1][:,None]*param['y'])/wl[None,:]
+        tmp = f*Vcomp*np.mean(np.exp(-1j*phi), axis=1)
+        phig /= param['wavel']
+        tmp += fg*Vg*np.exp(-1j*phig)
+    else:
+        wl = param['wavel'][:,:,None]+dl[None,None,:]*param['dwavel']
+        phi = 2*np.pi*c*(uv[0][:,:,None]*param['x']+uv[1][:,:,None]*param['y'])/wl
+        tmp = f*Vcomp*np.exp(-1j*phi)
+        if not np.isscalar(phig):
+            phig = phig[:,:,None]/wl
+        if not np.isscalar(fg):
+            fg = fg[:,:,None]/(1+0*wl)
+        if not np.isscalar(Vg):
+            Vg = Vg[:,:,None]/(1+0*wl)
+        tmp += fg*Vg*np.exp(-1j*phig)
+
+        tmp = tmp.mean(axis=2)
+        if not np.isscalar(fg):
+            fg = fg.mean(axis=2)
+
+        # tmp = 0.0
+        # for _l in dl:
+        #     wl = param['wavel']+_l*param['dwavel']
+        #     phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/wl
+        #     tmp += Vcomp*np.exp(-1j*phi)/CONFIG['Nsmear']
+    res = (Vstar + tmp)/(1.0 + f + fres + fg)
     return res
 
 def _V2binSlow(uv, param):
@@ -225,6 +283,7 @@ def _approxVUD(x='x', maxM=8):
 # -- set the approximation for UD visibility
 _VUDX = ''.join(_approxVUD('X', maxM=7)).strip()
 _VUDX =_VUDX[3:]
+#print _VUDX
 _VUDXeval = eval('lambda X:'+_VUDX)
 if False: # -- check approximation
     print _VUDX
@@ -287,7 +346,6 @@ def _V2binFast(uv, param):
 
     if 'f' in param.keys():
         f = np.abs(param['f'])*1.0
-        #f = min(f, 1.0)
     else:
         f = 0.0
 
@@ -300,6 +358,7 @@ def _V2binFast(uv, param):
         dwavel = param['dwavel']*1.0
     else:
         dwavel = 0.0
+
     if __warningDwavel and dwavel==0:
         print ' >>> WARNING: no spectral bandwidth provided!'
 
@@ -311,10 +370,10 @@ def _V2binFast(uv, param):
     #print diam, x, y, f, wavel, dwavel
     #print u.shape, v.shape, wavel.shape, vr.shape
     Nsmear = CONFIG['Nsmear']
-
+    print '#'*12, f, diam, '#'*12
     code = u"""
     int i, j;
-    double vis, X, pi, phi, visc, wl, t_vr, t_vi, c;
+    float vis, X, pi, phi, visc, wl, t_vr, t_vi, c;
 
     pi = 3.1415926535;
     c = 0.004848136;
@@ -366,8 +425,10 @@ def _V2binFast(uv, param):
     }""".replace('VUDX', _VUDX)
     err = weave.inline(code, ['u','v','NU','diam','x','y','f','diamc','B',
                               'wavel','dwavel','vr','vi', 'v2', 'Nsmear','fres'],
-                       compiler = 'gcc', verbose=0, extra_compile_args=['-O3'],
-                       headers=['<algorithm>', '<limits>'])
+                       compiler = 'gcc', verbose=0, #extra_compile_args=['-O3'],
+                       type_converters = converters.blitz,
+                       #headers=['<algorithm>', '<limits>']
+                       )
     v2 = v2.reshape(s)
     return v2
 
@@ -572,6 +633,7 @@ def _T3binFast(uv, param):
     }""".replace('VUDX', _VUDX)
     err = weave.inline(code, ['u1','v1','u2','v2','NU','diam','x','y', 'fres',
                               'f','diamc','wavel','dwavel','t3r','t3i','Nsmear'],
+                       #type_factories = blitz_type_factories,
                        compiler = 'gcc', verbose=0)
     res = t3r + 1j*t3i
     res = res.reshape(s)
@@ -759,9 +821,10 @@ def _generateFitData(chi2Data, observables, instruments):
                 _uv = np.append(_uv, np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[3][1])
             elif c[0].split(';')[0] == 't3' or c[0].split(';')[0] == 'cp' or\
                 c[0].split(';')[0] == 'icp':
-                _uv = np.append(_uv, np.maximum(np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[5].flatten(),
-                                                np.sqrt(c[3].flatten()**2+c[4].flatten()**2)/c[5].flatten(),
-                                                np.sqrt((c[1]+c[3]).flatten()**2+(c[3]+c[4]).flatten()**2)/c[5].flatten()))
+                tmp = np.maximum(np.sqrt(c[1].flatten()**2+c[2].flatten()**2)/c[5].flatten(),
+                                                np.sqrt(c[3].flatten()**2+c[4].flatten()**2)/c[5].flatten())
+                tmp = np.maximum(tmp, np.sqrt((c[1]+c[3]).flatten()**2+(c[2]+c[4]).flatten()**2)/c[5].flatten() )
+                _uv = np.append(_uv, tmp)
 
     _errs += _errs==0. # remove bad point in a dirty way
     return _meas, _errs, _uv, np.array(_type), _wl
@@ -1399,6 +1462,7 @@ class Open:
                 _dwavel = np.append(_dwavel, np.ones(c[-2].shape).flatten()*
                                         self.dwavel[c[0].split(';')[1]])
         res = (_uv*self.rmax/(_wl-0.5*_dwavel)-_uv*self.rmax/(_wl+0.5*_dwavel))*0.004848136
+        #print 'DEBUG:', res
         CONFIG['Nsmear'] = max(int(np.ceil(4*res.max())), 3)
         print ' | setting up Nsmear = %d'%CONFIG['Nsmear']
         return
@@ -1418,7 +1482,7 @@ class Open:
         return
     def _pool(self):
         if CONFIG['Ncores'] is None:
-            self.Ncores = max(multiprocessing.cpu_count()-1,1)
+            self.Ncores = max(multiprocessing.cpu_count(),1)
         else:
             self.Ncores = min(multiprocessing.cpu_count(), CONFIG['Ncores'])
         if self.Ncores==1:
@@ -1892,7 +1956,6 @@ class Open:
         print ' | Rbf interpolating: %d points -> %d pixels map'%(len(allMin),
                                                     Nx*Ny)
 
-
         rbf = scipy.interpolate.Rbf([x['best']['x'] for x in allMin],
                                     [x['best']['y'] for x in allMin],
                                     [x['chi2'] for x in allMin],
@@ -2043,7 +2106,6 @@ class Open:
         self.bestFit['nsigma'] = _nSigmas(self.chi2_UD,  self.bestFit['chi2'], self.ndata()-1)
         self.plotModel(fig=fig+1)
 
-
         # -- compare with injected companion, if any
         if 'X' in self._dataheader.keys() and 'Y' in self._dataheader.keys() and 'F' in self._dataheader.keys():
             print 'injected X:', self._dataheader['X'], 'found at %3.1f sigmas'%((x0-self._dataheader['X'])/ex0)
@@ -2072,7 +2134,7 @@ class Open:
         return
 
     def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=[], useMJD=True,
-                monteCarlo=False, corrSpecCha=None, nSigmaClip=3., addCompanion=None,
+                monteCarlo=False, corrSpecCha=None, nSigmaClip=4.5, addCompanion=None,
                 removeCompanion=None):
         """
         boot strap fitting around a single position. By default,
@@ -2221,32 +2283,40 @@ class Open:
             p.close()
             p.join()
 
-        plt.close(fig)
-        if CONFIG['suptitle']:
-            plt.figure(fig, figsize=(9/1.2,9/1.2))
-            plt.subplots_adjust(left=0.07, bottom=0.07,
-                            right=0.98, top=0.88,
-                            wspace=0.35, hspace=0.35)
-            title = "CANDID: bootstrapping uncertainties, %d rounds"%N
-            title += ' using '+', '.join(self.observables)
-            title += '\nfrom '+', '.join(self.instruments)
-            title += '\n'+self.titleFilename
-            plt.suptitle(title, fontsize=14, fontweight='bold')
-        else:
-            plt.figure(fig, figsize=(10/1.2,10/1.2))
-            plt.subplots_adjust(left=0.10, bottom=0.10,
-                            right=0.98, top=0.95,
-                            wspace=0.3, hspace=0.3)
+
+
+        if not fig is None:
+            plt.close(fig)
+            if CONFIG['suptitle']:
+                plt.figure(fig, figsize=(9/1.2,9/1.2))
+                plt.subplots_adjust(left=0.07, bottom=0.07,
+                                right=0.98, top=0.88,
+                                wspace=0.35, hspace=0.35)
+                title = "CANDID: bootstrapping uncertainties, %d rounds"%N
+                title += ' using '+', '.join(self.observables)
+                title += '\nfrom '+', '.join(self.instruments)
+                title += '\n'+self.titleFilename
+                plt.suptitle(title, fontsize=14, fontweight='bold')
+            else:
+                plt.figure(fig, figsize=(10/1.2,10/1.2))
+                plt.subplots_adjust(left=0.10, bottom=0.10,
+                                right=0.98, top=0.95,
+                                wspace=0.3, hspace=0.3)
         kz = self.allFits[0]['fitOnly']
         kz.sort()
         ax = {}
-        # -- sigma cliping on the chi2
 
+        # -- sigma cliping
         print ' | sigma clipping in position and flux ratio for nSigmaClip= %3.1f'%(nSigmaClip)
         x = np.array([a['best']['x'] for a in self.allFits])
         y = np.array([a['best']['y'] for a in self.allFits])
         f = np.array([a['best']['f'] for a in self.allFits])
+
         d = np.array([a['best']['diam*'] for a in self.allFits])
+        test = np.array([a['best']['x']!=param['x'] or
+                         a['best']['y']!=param['y'] or
+                         a['best']['f']!=param['f'] for a in self.allFits])
+
         w = np.where((x <= np.median(x) + nSigmaClip*(np.percentile(x, 84)-np.median(x)))*
                      (x >= np.median(x) - nSigmaClip*(np.median(x)-np.percentile(x, 16)))*
                      (y <= np.median(y) + nSigmaClip*(np.percentile(y, 84)-np.median(y)))*
@@ -2254,8 +2324,11 @@ class Open:
                      (f <= np.median(f) + nSigmaClip*(np.percentile(f, 84)-np.median(f)))*
                      (f >= np.median(f) - nSigmaClip*(np.median(f)-np.percentile(f, 16)))*
                      (d <= np.median(d) + nSigmaClip*(np.percentile(d, 84)-np.median(d)))*
-                     (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, 16)))
+                     (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, 16)))*
+                     test
                     )
+
+
         print ' | %d fits ignored'%(len(x)-len(w[0]))
 
         ax = {}
@@ -2265,6 +2338,24 @@ class Open:
                 X = np.array([a['best'][k1] for a in self.allFits])[w]
                 Y = np.array([a['best'][k2] for a in self.allFits])[w]
                 if i1<i2:
+                    nSigma=1
+                    p = pca(np.transpose(np.array([(X-X.mean()),
+                                       (Y-Y.mean())])))
+                    _a = np.arctan2(p.base[0][0], p.base[0][1])
+                    err0 = p.coef[:,0].std()
+                    err1 = p.coef[:,1].std()
+                    th = np.linspace(0,2*np.pi,100)
+                    _x, _y = nSigma*err0*np.cos(th), nSigma*err1*np.sin(th)
+                    _x, _y = X.mean() + _x*np.cos(_a+np.pi/2) + _y*np.sin(_a+np.pi/2), \
+                             Y.mean() - _x*np.sin(_a+np.pi/2) + _y*np.cos(_a+np.pi/2)
+                    res['boot'][k1+k2] = (_x, _y)
+                else:
+                    med = np.median(X)
+                    errp = np.median(X)-np.percentile(X, 16)
+                    errm = np.percentile(X, 84)-np.median(X)
+                    res['boot'][k1]=(med, errp,errm)
+
+                if i1<i2 and not fig is None:
                     if i1>0:
                         ax[(i1,i2)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1,
                                                   sharex=ax[(i1,i1)],
@@ -2281,37 +2372,22 @@ class Open:
                                  xerr=refFit['uncer'][k1], yerr=refFit['uncer'][k2],
                                  color='r', fmt='s', markersize=8, elinewidth=3,
                                  alpha=0.8, capthick=3, linewidth=3)
-                    nSigma=1
-                    # -- plot boot strap ellipse:
-                    p = pca(np.transpose(np.array([(X-X.mean()),
-                                       (Y-Y.mean())])))
-                    _a = np.arctan2(p.base[0][0], p.base[0][1])
-                    err0 = p.coef[:,0].std()
-                    err1 = p.coef[:,1].std()
-                    th = np.linspace(0,2*np.pi,100)
-                    _x, _y = nSigma*err0*np.cos(th), nSigma*err1*np.sin(th)
-                    _x, _y = X.mean() + _x*np.cos(_a+np.pi/2) + _y*np.sin(_a+np.pi/2), \
-                             Y.mean() - _x*np.sin(_a+np.pi/2) + _y*np.cos(_a+np.pi/2)
                     # error ellipse
                     plt.plot(_x, _y, linestyle='-', color='b', linewidth=3)
-                    res['boot'][k1+k2] = (_x, _y)
                     if len(ax[(i1,i2)].get_yticks())>5:
                         ax[(i1,i2)].set_yticks(ax[(i1,i2)].get_yticks()[::2])
 
-                if i1==i2:
+                if i1==i2 and not fig is None:
                     ax[(i1,i1)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
-                    med = np.median(X)
-                    errp = np.median(X)-np.percentile(X, 16)
-                    errm = np.percentile(X, 84)-np.median(X)
                     try:
                         n = int(max(2-np.log10(errp), 2-np.log10(errm)))
                     except:
-                        print ' | to feew data points? using mean instead of median'
-                        print X
+                        print ' | to few data points? using mean instead of median'
+                        #print X
                         med = np.mean(X)
                         errp = np.std(X)
                         errm = np.std(X)
-                        print med, errp, errm
+                        #print med, errp, errm
                         n = int(2-np.log10(errm))
 
                     form = '%s = $%'+str(int(n+2))+'.'+str(int(n))+'f'
@@ -2323,13 +2399,13 @@ class Open:
                     if len(ax[(i1,i2)].get_xticks())>5:
                         ax[(i1,i2)].set_xticks(ax[(i1,i2)].get_xticks()[::2])
                     print ' | %8s = %8.4f + %6.4f - %6.4f %s'%(k1, med, errp,errm, paramUnits(k1))
-                    res['boot'][k1]=(med, errp,errm)
                 if i2==len(kz)-1:
                     plt.xlabel(k1)
         self.bootRes = res
         return
         # -_-_-
-    def plotModel(self, param=None, fig=3):
+
+    def plotModel(self, param=None, fig=3, spectral=False):
         """
         param: what companion model to plot. If None, will attempt to use self.bestFit
         """
@@ -2358,42 +2434,65 @@ class Open:
         _mod = _modelObservables(filter(lambda c: c[0].split(';')[0] in self.observables
                                     and c[0].split(';')[1] in self.instruments,
                                 self._chi2Data), param)
-
+        #print _meas.shape
         plt.close(fig)
         plt.figure(fig, figsize=(11/1.2,8/1.2))
         plt.clf()
         N = len(set(_types))
-        for i,t in enumerate(set(_types)):
+        for i,t in enumerate(set(_types)): # for each observables
             w = np.where((_types==t)*(1-np.isnan(_meas)))
             ax1 = plt.subplot(2,N,i+1)
             plt.title(t.split(';')[1])
+            #print 'DEBUG:', set(np.round(_uv[w]*_wl[w],3))
+            if spectral:
+                X = _wl[w]
+                marker = '.'
+                linestyle = '-'
+                B = np.int_(1e3*_uv[w]*_wl[w])
+                allB = sorted(list(set(B)))[::-1]
+                offset = np.array([allB.index(b) for b in B])
+                oV2 = 0.4
+                oCP = 20
+            else:
+                X = _uv[w]
+                marker = '.'
+                linestyle = '-'
+                offset = np.zeros(len(w))
+                oV2 = 0.0
+                oCP = 0.0
+
             if any(np.iscomplex(_meas[w])):
                 res = (np.angle(_meas[w]/_mod[w])+np.pi)%(2*np.pi) - np.pi
-                print res.shape, _errs[w].shape
                 res /= _errs[w]
                 res = np.float_(res)
                 _measw = np.angle(_meas[w]).real
                 _modw = np.angle(_mod[w]).real
-
-                plt.plot(_uv[w], 180/np.pi*(np.mod(_modw+np.pi/2, np.pi)-np.pi/2),
-                        '.r', alpha=0.4)
-                plt.scatter(_uv[w], 180/np.pi*(np.mod(_measw+np.pi/2,np.pi)-np.pi/2),
-                            c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
-                plt.errorbar(_uv[w], 180/np.pi*(np.mod(_measw+np.pi/2, np.pi)-np.pi/2),
+                plt.plot(X, 180/np.pi*(np.mod(_modw+np.pi/2, np.pi)-np.pi/2)+oCP*offset,
+                        '.k', alpha=0.4)
+                plt.scatter(X, 180/np.pi*(np.mod(_measw+np.pi/2,np.pi)-np.pi/2)+oCP*offset,
+                            c=_wl[w], marker=marker, cmap='hot_r',
+                            alpha=0.5, linestyle=linestyle)
+                plt.errorbar(X, 180/np.pi*(np.mod(_measw+np.pi/2, np.pi)-np.pi/2) +oCP*offset,
                             fmt=',', yerr=180/np.pi*_errs[w], marker=None, color='k', alpha=0.2)
                 plt.ylabel(t.split(';')[0]+r': deg, mod 180')
             else:
                 res = (_meas[w]-_mod[w])/_errs[w]
-                plt.errorbar(_uv[w], _meas[w], fmt=',', yerr=_errs[w], marker=None,
+                plt.errorbar(X, _meas[w]+oV2*offset, fmt=',', yerr=_errs[w], marker=None,
                              color='k', alpha=0.2)
-                plt.scatter(_uv[w], _meas[w], c=_wl[w], marker='o', cmap='hot_r', alpha=0.5)
-                plt.plot(_uv[w], _mod[w], '.r', alpha=0.4)
+                plt.scatter(X, _meas[w]+oV2*offset, c=_wl[w], marker=marker, cmap='hot_r',
+                        alpha=0.5, linestyle=linestyle)
+                plt.plot(X, _mod[w]+oV2*offset, '.k', alpha=0.4)
                 plt.ylabel(t.split(';')[0])
+                if t.split(';')[0]=='v2':
+                    plt.ylim(-0.1, 1.1+np.max(offset)*oV2)
 
             # -- residuals
             plt.subplot(2,N,i+1+N, sharex=ax1)
-            plt.plot(_uv[w], res, '.k', alpha=0.5)
-            plt.xlabel('Bmax / $\lambda$')
+            plt.plot(X, res, '.k', alpha=0.5)
+            if spectral:
+                plt.xlabel('wavelength')
+            else:
+                plt.xlabel('Bmax / $\lambda$')
 
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
@@ -2796,17 +2895,14 @@ def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
             pass
     # -- result:
     if fullOutput:
-        if normalizedUncer:
-            try:
+        cor = None
+        if not cov is None:
+            if normalizedUncer:
                 cov *= reducedChi2
-            except:
-                pass
-        try:
-            cor = np.sqrt(np.diag(cov))
-            cor = cor[:,None]*cor[None,:]
-            cor = cov/cor
-        except:
-            cor = None
+            if all(np.diag(cov)>=0):
+                cor = np.sqrt(np.diag(cov))
+                cor = cor[:,None]*cor[None,:]
+                cor = cov/cor
 
         pfix={'best':pfix, 'uncer':uncer,
               'chi2':reducedChi2, 'model':model,
