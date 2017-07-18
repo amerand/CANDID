@@ -19,7 +19,8 @@ import time
 import scipy.special
 import scipy.interpolate
 import scipy.stats
-# -- defunct
+
+# -- defunct ;(
 #from scipy import weave
 #from scipy.weave import converters
 #from scipy.weave import blitz_tools
@@ -207,7 +208,11 @@ def _VbinSlow(uv, param):
     else:
         wl = param['wavel'][:,:,None]+dl[None,None,:]*param['dwavel']
         phi = 2*np.pi*c*(uv[0][:,:,None]*param['x']+uv[1][:,:,None]*param['y'])/wl
+
+        if not np.isscalar(Vcomp):
+            Vcomp = Vcomp[:,:,None]*(1.+0*wl)
         tmp = f*Vcomp*np.exp(-1j*phi)
+
         if not np.isscalar(phig):
             phig = phig[:,:,None]/wl
         if not np.isscalar(fg):
@@ -1186,12 +1191,9 @@ class Open:
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME']=='OI_WAVELENGTH' and testInst(hdu):
                 self.wavel[hdu.header['INSNAME']] = self.wlOffset + hdu.data['EFF_WAVE']*1e6 # in um
-                self.wavel_3m[hdu.header['INSNAME']] = (self.wavel[hdu.header['INSNAME']].min(),
-                                                        self.wavel[hdu.header['INSNAME']].mean(),
-                                                        self.wavel[hdu.header['INSNAME']].max())
-                #try:
-                #    self.all_dwavel[hdu.header['INSNAME']] = np.abs(np.gradient(hdu.data['EFF_WAVE']*1e6))
-                #except: # -- case of single spectral channel:
+                self.wavel_3m[hdu.header['INSNAME']] = (self.wlOffset + self.wavel[hdu.header['INSNAME']].min(),
+                                                        self.wlOffset + self.wavel[hdu.header['INSNAME']].mean(),
+                                                        self.wlOffset + self.wavel[hdu.header['INSNAME']].max())
                 self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
 
                 self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
@@ -1213,8 +1215,8 @@ class Open:
         #amberWLmin, amberWLmax = 1.8, 2.4 # -- K
         #amberWLmin, amberWLmax = 1.4, 1.7 # -- H
         #amberWLmin, amberWLmax = 1.0, 1.3 # -- J
-        amberWLmin, amberWLmax = 1.4, 2.5 # -- H+K
-        #amberWLmin, amberWLmax = 1.0, 2.5 # -- J+H+K
+        #amberWLmin, amberWLmax = 1.4, 2.5 # -- H+K
+        amberWLmin, amberWLmax = 1.0, 2.5 # -- J+H+K
 
         amberAtmBand = [1.0, 1.35, 1.87]
         for hdu in self._fitsHandler[1:]:
@@ -1536,8 +1538,8 @@ class Open:
         as {'x':mas, 'y':mas, 'f':fratio in %}. 'f' will be forced to be positive.
         """
         if step is None:
-            step = 1/4. * self.minSpatialScale
-            print ' | step= not given, using 1/4 X smallest spatial scale = %4.2f mas'%step
+            step = 1/5. * self.minSpatialScale
+            print ' | step= not given, using 1/5 X smallest spatial scale = %4.2f mas'%step
 
         #--
         if rmin is None:
@@ -1746,7 +1748,7 @@ class Open:
         - addfits: add the fit and fimap in the FITS file, as a binary table
         """
         if step is None:
-            step = np.sqrt(2) * self.minSpatialScale
+            step = np.sqrt(2)*self.minSpatialScale
             print ' | step= not given, using sqrt(2) x smallest spatial scale = %4.2f mas'%step
 
         if rmin is None:
@@ -2373,7 +2375,7 @@ class Open:
                                  xerr=refFit['uncer'][k1], yerr=refFit['uncer'][k2],
                                  color='r', fmt='s', markersize=8, elinewidth=3,
                                  alpha=0.8, capthick=3, linewidth=3)
-                    # error ellipse
+                    # -- error ellipse
                     plt.plot(_x, _y, linestyle='-', color='b', linewidth=3)
                     if len(ax[(i1,i2)].get_yticks())>5:
                         ax[(i1,i2)].set_yticks(ax[(i1,i2)].get_yticks()[::2])
