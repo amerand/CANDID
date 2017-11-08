@@ -2214,6 +2214,7 @@ class Open:
         tmp = {k:param[k] for k in param.keys()}
         for _k in self.dwavel.keys():
             tmp['dwavel;'+_k] = self.dwavel[_k]
+        # -- reference fit (all data)
         refFit = _fitFunc(tmp, self._chi2Data, self.observables,
                             self.instruments, fitAlso, doNotFit)
 
@@ -2229,7 +2230,7 @@ class Open:
             print ' > Warning: not enough dates to bootstrap on them!'
             useMJD=False
 
-        for i in range(N):
+        for i in range(N): # -- looping fits
             if useMJD:
                 x = {j:np.random.rand() for j in mjds}
                 #print i, x
@@ -2287,7 +2288,6 @@ class Open:
             p.join()
 
 
-
         if not fig is None:
             plt.close(fig)
             if CONFIG['suptitle']:
@@ -2330,8 +2330,10 @@ class Open:
                      (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, 16)))*
                      test
                     )
-
-
+        flag = np.ones(len(self.allFits), dtype=bool)
+        flag[w] = False
+        for i in range(len(self.allFits)):
+            self.allFits[i]['sigma clipping flag'] = flag[i]
         print ' | %d fits ignored'%(len(x)-len(w[0]))
 
         ax = {}
@@ -2343,7 +2345,7 @@ class Open:
                 if i1<i2:
                     nSigma=1
                     p = pca(np.transpose(np.array([(X-X.mean()),
-                                       (Y-Y.mean())])))
+                                                   (Y-Y.mean())])))
                     _a = np.arctan2(p.base[0][0], p.base[0][1])
                     err0 = p.coef[:,0].std()
                     err1 = p.coef[:,1].std()
