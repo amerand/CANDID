@@ -57,7 +57,8 @@ import sys
 #__version__ = '0.19 | 2015/12/26' # adding instrument selection
 #__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
 #__version__ = '0.21 | 2016/11/22' # some cleaning
-__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
+#__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
+__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots 
 
 
 print """
