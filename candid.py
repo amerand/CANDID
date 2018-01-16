@@ -58,7 +58,7 @@ import sys
 #__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
 #__version__ = '0.21 | 2016/11/22' # some cleaning
 #__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
-__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots 
+__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots
 
 
 print """
@@ -1689,7 +1689,7 @@ class Open:
         plt.title(tit)
 
         plt.colorbar(format='%0.2f')
-        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
@@ -1702,7 +1702,7 @@ class Open:
                                 self.ndata()),
                        cmap=CONFIG['color map'])
         plt.colorbar(format='%0.2f')
-        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
         ax1.set_aspect('equal', 'datalim')
@@ -2011,7 +2011,7 @@ class Open:
             plt.plot([f['best']['x'], params[i]['x']],
                      [f['best']['y'], params[i]['y']], '-y',
                      alpha=0.3, linewidth=2)
-        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-0.5*self.rmax/float(N), -self.rmax+0.5*self.rmax/float(N))
         plt.ylim(-self.rmax+0.5*self.rmax/float(N), self.rmax-0.5*self.rmax/float(N))
@@ -2097,7 +2097,7 @@ class Open:
                         alpha=0.5, linewidth=2)
             ax2.text(0.9*x0, 0.9*y0, r'%3.1f$\sigma$'%s0, color='r')
 
-        plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-self.rmax/float(N), -self.rmax+self.rmax/float(N))
         plt.ylim(-self.rmax+self.rmax/float(N), self.rmax-self.rmax/float(N))
@@ -2683,7 +2683,7 @@ class Open:
                 plt.pcolormesh(X, Y, self.allf3s[m], cmap=CONFIG['color map'],
                     vmin=vmin, vmax=vmax)
                 plt.colorbar()
-                plt.xlabel(r'$\Delta \alpha\, \rightarrow$ E (mas)')
+                plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
                 plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
                 plt.xlim(self.rmax, -self.rmax)
                 plt.ylim(-self.rmax, self.rmax)
