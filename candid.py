@@ -31,7 +31,6 @@ import multiprocessing
 import os
 import sys
 
-#import cvis
 #from numba.decorators import jit
 
 #__version__ = '0.1 | 2014/11/25'
@@ -58,7 +57,8 @@ import sys
 #__version__ = '0.20 | 2016/06/14' # adding numpy (default, slow)/weave selection, bug fixes
 #__version__ = '0.21 | 2016/11/22' # some cleaning
 #__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
-__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots
+#__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots
+__version__ = '0.3 | 2018/02/01' # Cython acceleration
 
 
 print """
@@ -180,7 +180,7 @@ def _VbinSlow(uv, param):
         Vstar = _Vud(B, param['diam*'], param['wavel'])
 
     if 'diamc' in param.keys():
-        Vcomp = _Vud(B, param['diamc'], param['wavel'])+0j
+        Vcomp = _Vud(B, param['diamc'], param['wavel'])
     else:
         Vcomp = 1.0 + 0j # -- assumes it is unresolved.
 
@@ -200,14 +200,21 @@ def _VbinSlow(uv, param):
 
     if CONFIG['Nsmear']<2:
         dl = np.array([0.])
+
     if np.isscalar(param['wavel'] ):
         wl = param['wavel']+dl*param['dwavel']
         phi = 2*np.pi*c*(uv[0][:,None]*param['x']+uv[1][:,None]*param['y'])/wl[None,:]
-        tmp = f*Vcomp*np.mean(np.exp(-1j*phi), axis=1)
-        phig /= param['wavel']
-        tmp += fg*Vg*np.exp(-1j*phig)
+        tmp = f*Vcomp[:,None]*np.exp(-1j*phi)
+        if np.isscalar(phig):
+            phig = phig/wl[None,:] +0.*uv[0][:,None]
+            tmp += fg*Vg*np.exp(-1j*phig)
+        else:
+            phig = phig[:,None]/wl[None,:]
+            tmp += fg*Vg[:,None]*np.exp(-1j*phig)
+        res = (Vstar[:,None] + tmp)/(1.0 + f + fres + fg)
+        res = res.mean(axis=1)
     else:
-        wl = param['wavel'][:,:,None]+dl[None,None,:]*param['dwavel']
+        wl = param['wavel'][:,:,None] + dl[None,None,:]*param['dwavel']
         phi = 2*np.pi*c*(uv[0][:,:,None]*param['x']+uv[1][:,:,None]*param['y'])/wl
 
         if not np.isscalar(Vcomp):
@@ -221,18 +228,37 @@ def _VbinSlow(uv, param):
         if not np.isscalar(Vg):
             Vg = Vg[:,:,None]/(1+0*wl)
         tmp += fg*Vg*np.exp(-1j*phig)
+        res = (Vstar + tmp)/(1.0 + f + fres + fg)
+        res = res.mean(axis=2)
 
-        tmp = tmp.mean(axis=2)
-        if not np.isscalar(fg):
-            fg = fg.mean(axis=2)
-
-        # tmp = 0.0
-        # for _l in dl:
-        #     wl = param['wavel']+_l*param['dwavel']
-        #     phi = 2*np.pi*c*(uv[0]*param['x']+uv[1]*param['y'])/wl
-        #     tmp += Vcomp*np.exp(-1j*phi)/CONFIG['Nsmear']
-    res = (Vstar + tmp)/(1.0 + f + fres + fg)
     return res
+
+_Vbin = _VbinSlow
+import cyvis
+def _Vbin(uv, p):
+    #print uv[0].shape, len(uv[0]), p['wavel'].shape
+    N = np.size(uv[0])
+    if not 'diam*' in p.keys():
+        p['diam*'] = 0.0
+    if not 'diamc' in p.keys():
+        p['diamc'] = 0.0
+    if not 'fres' in p.keys():
+        p['fres'] = 0.0
+    if np.isscalar(p['wavel']):
+        p['wavel'] = np.ones(N)*p['wavel']
+    else:
+        p['wavel'] = p['wavel'].flatten()
+    if not 'dwavel' in p.keys():
+        p['dwavel'] = 0.0
+        CONFIG['Nsmear'] = 0
+    if np.isscalar(p['dwavel']):
+        p['dwavel'] = np.ones(N)*p['dwavel']
+
+    res = np.zeros(N, dtype=np.complex)
+    cyvis.cVbin(res, uv[0].flatten(), uv[1].flatten(),
+                    p['wavel'], p['dwavel'], CONFIG['Nsmear'], p['x'], p['y'],
+                    p['f'], p['fres'], p['diam*'], p['diamc'])
+    return np.reshape(res, uv[0].shape)
 
 def _V2binSlow(uv, param):
     """
@@ -251,7 +277,7 @@ def _V2binSlow(uv, param):
     """
     if 'f' in param.keys():
         param['f'] = min(np.abs(param['f']),100)
-    return np.abs(_VbinSlow(uv, param))**2
+    return np.abs(_Vbin(uv, param))**2
 
 def _T3binSlow(uv, param):
     """
@@ -271,9 +297,9 @@ def _T3binSlow(uv, param):
     """
     if 'f' in param.keys():
         param['f'] = min(np.abs(param['f']),100)
-    V1 = _VbinSlow((uv[0], uv[1]), param)
-    V2 = _VbinSlow((uv[2], uv[3]), param)
-    V3 = _VbinSlow((uv[0]+uv[2], uv[1]+uv[3]), param)
+    V1 = _Vbin((uv[0], uv[1]), param)
+    V2 = _Vbin((uv[2], uv[3]), param)
+    V3 = _Vbin((uv[0]+uv[2], uv[1]+uv[3]), param)
     return V1*V2*np.conj(V3)
 
 def _approxVUD(x='x', maxM=8):
