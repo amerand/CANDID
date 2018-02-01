@@ -2,6 +2,12 @@
 
 This is a suite of Python2.7 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit.
 
+To install, run:
+```
+python setup.py install
+```
+it will compile the C source used in Cython, and install CANDID.
+
 ## What does it do for you?
 
 ### Companion Search
@@ -184,7 +190,7 @@ This will, for example, set the maximum computing time to 300s (instead of the d
 
 ## Performances
 
-Note that with the release of SciPy 1.9, `scipy.weave` has been phased out hence CANDID has taken a hit in terms of performances...
+Note that with the release of SciPy 1.9, `scipy.weave` has been phased out, hence CANDID has taken a hit in terms of performances by reversing to Numpy. Starting in version 0.3 of CANDID (early 2018), Cython is used to accelerate by a factor 2 over Numpy.
 
 ### Multiprocessing
 
