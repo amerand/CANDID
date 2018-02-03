@@ -144,7 +144,7 @@ def _VbinSlow(uv, param):
     if 'f' in param.keys():
         f = np.abs(param['f'])/100.
     else:
-        f = 0/100.
+        f = 0.
     for f_ in param.keys():
         if f_.startswith('f_'):
             wl = float(f_.split('_')[1])
@@ -214,13 +214,13 @@ def _VbinSlow(uv, param):
         res = (Vstar[:,None] + tmp)/(1.0 + f + fres + fg)
         res = res.mean(axis=1)
     else:
+        # -- assumes u, v, and wavel are 2D
         wl = param['wavel'][:,:,None] + dl[None,None,:]*param['dwavel']
         phi = 2*np.pi*c*(uv[0][:,:,None]*param['x']+uv[1][:,:,None]*param['y'])/wl
 
         if not np.isscalar(Vcomp):
             Vcomp = Vcomp[:,:,None]*(1.+0*wl)
         tmp = f*Vcomp*np.exp(-1j*phi)
-
         if not np.isscalar(phig):
             phig = phig[:,:,None]/wl
         if not np.isscalar(fg):
@@ -228,37 +228,56 @@ def _VbinSlow(uv, param):
         if not np.isscalar(Vg):
             Vg = Vg[:,:,None]/(1+0*wl)
         tmp += fg*Vg*np.exp(-1j*phig)
-        res = (Vstar + tmp)/(1.0 + f + fres + fg)
-        res = res.mean(axis=2)
-
+        res = (Vstar + tmp.mean(axis=2))/(1.0 + f + fres + fg)
     return res
 
-_Vbin = _VbinSlow
-import cyvis
-def _Vbin(uv, p):
-    #print uv[0].shape, len(uv[0]), p['wavel'].shape
-    N = np.size(uv[0])
-    if not 'diam*' in p.keys():
-        p['diam*'] = 0.0
-    if not 'diamc' in p.keys():
-        p['diamc'] = 0.0
-    if not 'fres' in p.keys():
-        p['fres'] = 0.0
-    if np.isscalar(p['wavel']):
-        p['wavel'] = np.ones(N)*p['wavel']
-    else:
-        p['wavel'] = p['wavel'].flatten()
-    if not 'dwavel' in p.keys():
-        p['dwavel'] = 0.0
-        CONFIG['Nsmear'] = 0
-    if np.isscalar(p['dwavel']):
-        p['dwavel'] = np.ones(N)*p['dwavel']
+try:
+    # -- Using Cython visibility function
+    import cyvis
+    def _VbinCy(uv, p):
+        N = np.size(uv[0])
+        if not 'diam*' in p.keys():
+            diam = 0.0
+        else:
+            diam = p['diam*']*1.0 # copy
 
-    res = np.zeros(N, dtype=np.complex)
-    cyvis.cVbin(res, uv[0].flatten(), uv[1].flatten(),
-                    p['wavel'], p['dwavel'], CONFIG['Nsmear'], p['x'], p['y'],
-                    p['f'], p['fres'], p['diam*'], p['diamc'])
-    return np.reshape(res, uv[0].shape)
+        if not 'diamc' in p.keys():
+            diamc = 0.0
+        else:
+            diamc = p['diamc']*1.0 # copy
+
+        if not 'fres' in p.keys():
+            fres = 0.0
+        else:
+            fres = p['fres']*1.0 # copy
+
+        if isinstance(p['wavel'], float):
+            wavel = np.ones(N)*p['wavel']
+        else:
+            wavel = p['wavel'].flatten()
+
+        if not 'dwavel' in p.keys():
+            dwavel = 0.0
+        else:
+            dwavel = p['dwavel']*1.0 # copy
+        if isinstance(dwavel, float):
+            dwavel = np.ones(N)*p['dwavel']
+        else:
+            dwavel = p['wavel'].flatten()
+        Vr = np.ones(np.size(uv[0]), dtype=np.double)
+        Vi = np.zeros(np.size(uv[0]), dtype=np.double)
+
+        cyvis.cyVbin(Vr, Vi, uv[0].flatten(), uv[1].flatten(),
+                     wavel, dwavel, CONFIG['Nsmear'],
+                     p['x'], p['y'], min(p['f'], 100), fres,
+                     diam, diamc)
+        return np.reshape(Vr+1j*Vi, uv[0].shape)
+    _Vbin = _VbinCy
+    print 'Using Cython visibilities computation (Faster than Numpy)'
+except:
+    # -- Using Numpy visibility function
+    _Vbin = _VbinSlow
+    print 'Using Numpy visibilities computation (Slower than Cython)'
 
 def _V2binSlow(uv, param):
     """
@@ -293,14 +312,12 @@ def _T3binSlow(uv, param):
     - diamc: in mas
     - dwavel: in um
     - fres: unresolved flux, in fraction of primary flux
-
     """
     if 'f' in param.keys():
-        param['f'] = min(np.abs(param['f']),100)
-    V1 = _Vbin((uv[0], uv[1]), param)
-    V2 = _Vbin((uv[2], uv[3]), param)
-    V3 = _Vbin((uv[0]+uv[2], uv[1]+uv[3]), param)
-    return V1*V2*np.conj(V3)
+       param['f'] = min(np.abs(param['f']),100)
+    return _Vbin((uv[0], uv[1]), param)*\
+           _Vbin((uv[2], uv[3]), param)*\
+           np.conj(_Vbin((uv[0]+uv[2], uv[1]+uv[3]), param))
 
 def _approxVUD(x='x', maxM=8):
     """
@@ -311,7 +328,6 @@ def _approxVUD(x='x', maxM=8):
     return ['%s%s/%.1f'%(' -' if (-1)**m < 0 else ' +',
                         '*'.join(x*(n+2*m-1)) if (n+2*m-1)>0 else '1',
                          cm(m)) for m in range(maxM+1)]
-
 
 # -- set the approximation for UD visibility
 _VUDX = ''.join(_approxVUD('X', maxM=7)).strip()
@@ -1715,7 +1731,7 @@ class Open:
         plt.title(tit)
 
         plt.colorbar(format='%0.2f')
-        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
+        plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
@@ -1728,7 +1744,8 @@ class Open:
                                 self.ndata()),
                        cmap=CONFIG['color map'])
         plt.colorbar(format='%0.2f')
-        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
+        plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
+
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
         ax1.set_aspect('equal', 'datalim')
@@ -2037,7 +2054,8 @@ class Open:
             plt.plot([f['best']['x'], params[i]['x']],
                      [f['best']['y'], params[i]['y']], '-y',
                      alpha=0.3, linewidth=2)
-        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
+        plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
+
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-0.5*self.rmax/float(N), -self.rmax+0.5*self.rmax/float(N))
         plt.ylim(-self.rmax+0.5*self.rmax/float(N), self.rmax-0.5*self.rmax/float(N))
@@ -2123,7 +2141,7 @@ class Open:
                         alpha=0.5, linewidth=2)
             ax2.text(0.9*x0, 0.9*y0, r'%3.1f$\sigma$'%s0, color='r')
 
-        plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
+        plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-self.rmax/float(N), -self.rmax+self.rmax/float(N))
         plt.ylim(-self.rmax+self.rmax/float(N), self.rmax-self.rmax/float(N))
@@ -2709,7 +2727,7 @@ class Open:
                 plt.pcolormesh(X, Y, self.allf3s[m], cmap=CONFIG['color map'],
                     vmin=vmin, vmax=vmax)
                 plt.colorbar()
-                plt.xlabel(r'$\Delta \alpha\, \leftarrow$ E (mas)')
+                plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
                 plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
                 plt.xlim(self.rmax, -self.rmax)
                 plt.ylim(-self.rmax, self.rmax)
