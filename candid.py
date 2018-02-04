@@ -58,7 +58,7 @@ import sys
 #__version__ = '0.21 | 2016/11/22' # some cleaning
 #__version__ = '0.22 | 2017/02/23' # bug corrected in smearing computation
 #__version__ = '0.23 | 2017/11/08' # minor bugs corrected in plots
-__version__ = '0.3 | 2018/02/01' # Cython acceleration
+__version__ = '0.3.1 | 2018/02/04' # Cython acceleration
 
 
 print """
@@ -267,7 +267,7 @@ try:
         Vr = np.ones(np.size(uv[0]), dtype=np.double)
         Vi = np.zeros(np.size(uv[0]), dtype=np.double)
 
-        cyvis.cyVbin(Vr, Vi, uv[0].flatten(), uv[1].flatten(),
+        cyvis.cyVbin(len(Vr), Vr, Vi, uv[0].flatten(), uv[1].flatten(),
                      wavel, dwavel, CONFIG['Nsmear'],
                      p['x'], p['y'], min(p['f'], 100), fres,
                      diam, diamc)
