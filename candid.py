@@ -1743,7 +1743,7 @@ class Open:
 
         plt.xlim(self.rmax, -self.rmax)
         plt.ylim(-self.rmax, self.rmax)
-        ax1.set_aspect('equal', 'datalim')
+        ax1.set_aspect('equal', )#'datalim')
         # -- make a crosshair around the minimum:
         plt.plot([x0, x0], [y0-0.05*self.rmax, y0-0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
         plt.plot([x0, x0], [y0+0.05*self.rmax, y0+0.1*self.rmax], '-r', alpha=0.5, linewidth=2)
@@ -2051,7 +2051,7 @@ class Open:
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-0.5*self.rmax/float(N), -self.rmax+0.5*self.rmax/float(N))
         plt.ylim(-self.rmax+0.5*self.rmax/float(N), self.rmax-0.5*self.rmax/float(N))
-        ax1.set_aspect('equal', 'datalim')
+        ax1.set_aspect('equal',)# 'datalim')
 
         # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
         n_sigma = _nSigmas(self.chi2_UD, _Z, self.ndata()-1)
@@ -2070,7 +2070,7 @@ class Open:
         # if self.rmin>0:
         #     c = plt.Circle((0,0), self.rmin, color='k', alpha=0.33, hatch='x')
         #     ax2.add_patch(c)
-        ax2.set_aspect('equal', 'datalim')
+        #ax2.set_aspect('equal', 'datalim')
         # -- invert X axis
 
         if reliability=='unreliable':
@@ -2093,7 +2093,7 @@ class Open:
         for ii, i in enumerate(np.argsort([x['chi2'] for x in allMin2])):
             print(' | BEST FIT %d: chi2=%5.2f'%(ii, allMin2[i]['chi2']))
             allMin2[i]['best']['f'] = np.abs(allMin2[i]['best']['f'] )
-            keys = allMin2[i]['best'].keys()
+            keys = list(allMin2[i]['best'].keys())
             keys.remove('_k')
             for _k in keys:
                 if _k.startswith('dwavel'):
@@ -2137,7 +2137,7 @@ class Open:
         plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
         plt.xlim(self.rmax-self.rmax/float(N), -self.rmax+self.rmax/float(N))
         plt.ylim(-self.rmax+self.rmax/float(N), self.rmax-self.rmax/float(N))
-        ax2.set_aspect('equal', 'datalim')
+        #ax2.set_aspect('equal', 'datalim')
 
         # -- best fit parameters:
         j = np.argmin([x['chi2'] for x in self.allFits if x['best']['x']**2+x['best']['y']**2>=self.rmin**2])
@@ -2207,7 +2207,7 @@ class Open:
             pass
         if N is None:
             print(" | 'N=' not given, setting it to Ndata/2")
-            N = max(self.ndata()/2, 100)
+            N = int(max(self.ndata()/2, 100))
 
         self._chi2Data = self._copyRawData()
 
@@ -2723,7 +2723,7 @@ class Open:
                 plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
                 plt.xlim(self.rmax, -self.rmax)
                 plt.ylim(-self.rmax, self.rmax)
-                ax1.set_aspect('equal', 'datalim')
+                ax1.set_aspect('equal', )#'datalim')
 
             plt.subplot(212)
 
