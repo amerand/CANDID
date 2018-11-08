@@ -1,10 +1,10 @@
 # [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 
-This is a suite of Python2.7 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit.
+This is a suite of Python 2/3 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit.
 
 To install, run:
 ```
-python setup.py install
+python setup.py install --user
 ```
 it will compile the C source used in Cython, and install CANDID.
 
@@ -16,22 +16,22 @@ The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leasts
 
 Note that if you use [LITpro](http://www.jmmc.fr/litpro_page.htm), you might find that the results given by CANDID are different:
 * In general, position of the found companion is the same for LITpro and CANDID
-* LITpro tends to overestimate the flux ratio, because it does not take into account bandwidth smearing, whereas CANDID does. For AX Cir, the flux ratio found bt CANDID is 1%, whereas it is 0.8% for LITpro (or CANDID when bandwidth smearing is disabled). Note that the latest versions of CANDID compute numerically the bandwidth smearing to make sure we never run into restrictions of the analytical approximation of Lachaume & Berger 2013. the variable `CONFIG['Nsmear']` is automatically adjusted, so do not try to adjust it yourself.
+* LITpro tends to overestimate the flux ratio, because it does not take into account bandwidth smearing, whereas CANDID does. For AX Cir, the flux ratio found bt CANDID is 1%, whereas it is 0.8% for LITpro (or CANDID when bandwidth smearing is disabled). Note that the latest versions of CANDID compute numerically the bandwidth smearing to make sure we never run into restrictions of the analytical approximation of Lachaume & Berger (2013). the variable `CONFIG['Nsmear']` is automatically adjusted, so do not try to adjust it yourself.
 
 ### Detection limit
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
 ### Non-Detection Limit
-There are 2 approachs inplemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection [Gallenne et al. 2015](http://arxiv.org/abs/1505.02715).
+There are two approaches implemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection [Gallenne et al. 2015](http://arxiv.org/abs/1505.02715).
 
 ## Known limitations
 
-The code has *not* been deeply error proofed. If you encounter problems or bugs, do not hesitate to contact the developpers.
+The code has *not* been deeply error proofed. If you encounter problems or bugs, do not hesitate to contact the developers.
 
 * **The (non-)detection levels are given assuming the errors bars in the data are uncorrelated**. This is of course not the case for real data, in particular when a lot of spectral channels are present.
 * The works only with simple OIFITS files: all observations should be with the same instrument (same OI_WAVELENGTH) and all data will be taken, assuming a single target is present. Several OIFITS files can be loaded at once (giving a list of files) but it assumes that all files contain only one target.
-* The UD visibility is computed using a polynomial approximation, so only first and second lobe visibilities for the primary can be handled. That should be enough but migh lead to some (unknown yet) side effects.
-* The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developpers!
+* The UD visibility is computed using a polynomial approximation, so only first and second lobe visibilities for the primary can be handled. That should be enough but might lead to some (unknown yet) side effects.
+* The code has been tested of OIFITS files form CHARA/MIRC and VLTI/PIONIER. If you use other instruments and encounter problems, please contact the developers!
 * The code can take lots of memory because it stores lots of intermediate results, so using a 64bit python is advisable.
 * The code is not particularly fast, but uses [multiprocessing](https://docs.python.org/2/library/multiprocessing.html): our experience on Macs is that it leads to several problems:
  * It does not work properly with IPython Notebooks. [It seems to be known](https://github.com/ipython/ipython/issues/6109).
@@ -42,8 +42,8 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 
 The following example can be found in [axcir.py](axcir.py).
 
-* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diamaters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
-* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](doc/figure_3.png)): this demontrates that, in the case of our example, the secondary "detections" are only artefact from the main companion.
+* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diameters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
+* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](doc/figure_3.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
 * **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](doc/figure_5.png)).
 
 **We strongly recommend you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
@@ -52,8 +52,7 @@ The following example can be found in [axcir.py](axcir.py).
 
 ```
 >>> import candid
->>> from matplotlib import pyplot as plt
->>> axcir = candid.Open('AXCir.oifits')
+>>> o = candid.Open('AXCir.oifits')
  > loading file AXCir.oifits
  | WARNING: no valid T3AMP values in this HDU
  | WARNING: no valid T3AMP values in this HDU
@@ -66,13 +65,13 @@ The following example can be found in [axcir.py](axcir.py).
  | rmax= not given, set to Field of View: rmax=55.24 mas
 ```
 
-One might want to limit the observables and/or instrumental setups fitted. VLTI/GRAVITY data, for example, provide no meaningful closure amplitude. If our "axcir" variable was from a GRAVITY dataset, one should add `axcir.observables=['icp','v2']; axcir.instruments = ['SPECTRO_FT']` after opening the file in order to limit the following fits to phase closure and V2, as well as instrument to the fringe tracker (or `axcir.instruments = ['SPECTRO_SC']` for the science spectrograph, but very slow...).
+One might want to limit the observables and/or instrumental setups fitted. VLTI/GRAVITY data, for example, provide no meaningful closure amplitude. If our "o" variable was from a GRAVITY dataset, one should add `o.observables=['icp','v2']; o.instruments = ['SPECTRO_FT']` after opening the file in order to limit the following fits to phase closure and V2, as well as instrument to the fringe tracker (or `o.instruments = ['SPECTRO_SC']` for the science spectrograph, but very slow...).
 
-### FIG1 - CHI2MAP: fitted diameter and fixed flux ratio=1%:
+### CHI2MAP: fitted diameter and fixed flux ratio=1%:
 The easiest thing to try is a chi2 map, assuming a certain flux ratio for the companion. This is quite inefficient but CANDID allows to do it. If no parametrization is given (step size 'step=', maximum radius for search 'rmax'), CANDID will guess some values based on the angular resolution and the wavelength smearing field of view. The flux ratio is given in percent.
 
 ```
->>> axcir.chi2Map(fig=1, fratio=1.0)
+>>> o.chi2Map(fig=1, fratio=1.0)
  > step= not given, using 1/4 X smallest spatial scale = 0.67 mas
  > observables: ['v2', 'icp']
  > UD diam Fit
@@ -89,7 +88,7 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
 ### FITMAP:
 Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](doc/figure_1.png)). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size `step=`. In our example below, we let CANDID chose the step size, based on the angular resolution of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
 ```
->>> axcir.fitMap(fig=2)
+>>> o.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
  > observables: ['v2', 'icp']
  > Preliminary analysis
@@ -113,12 +112,34 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](
 
 FITMAP allows to provide additional parameters, as well as fixing parameters in the fit. Additional parameters are passed using `addParam={'diamc':0.5, 'fres':0.1}` for a resolved flux of 10% (of the centra star's flux) and a companion angular diameter of 0.5mas. If ones want to prevent fitting parameters, `doNotFit=['fres', 'diamc']`.
 
-### FITMAP, after removing companion
-CANDID offers the possibility, once a companion has been detected, to remove it analytically from the data and rerun a FITMAP. This allows to estimate the dynamic range of the data set, but also to detect fainter tertiary components. fitMap stores the best fit in the dictionary bestFit, which key best contains the dictionary containing the parameters. Note that `axcir.bestFit['uncer']` contains the corresponding error bars.
+### ERROR BARS by bootstrapping:
+In order to better estimate the uncertainties on the companion we found, we can use bootstrapping to estimate the uncertainties around the best fit parameters. The default starting is the best fitted position: since we made a fit with an analytical removal of the companion, the currently stored companion is not the one found on Fig2; thankfully we stored it in the variable 'p'.
+
+On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
 
 ```
->>> p = axcir.bestFit['best']
->>> axcir.fitMap(fig=3, removeCompanion=p)
+>>> o.fitBoot(fig=3, param=p)
+ > 'N=' not given, setting it to Ndata/2
+ |================================================== |  99%   0 s remaining
+ > sigma clipping in position and flux ratio for nSigmaClip= 3.5
+ | 0 fits ignored
+ |    diam* =   0.8002 + 0.0144 - 0.0153 mas
+ |        f =   1.0483 + 0.0891 - 0.0895 %
+ |        x =   6.2435 + 0.1029 - 0.1183 mas
+ |        y = -28.5068 + 0.1419 - 0.1686 mas
+```
+
+![Figure 3](doc/figure_3.png)
+
+FITBOOT, similar to FITMAP, accepts the `doNotFit=` input as a list of non-fitted parameters.
+
+
+### FITMAP, after analytically removing companion
+CANDID offers the possibility, once a companion has been detected, to remove it analytically from the data and rerun a FITMAP. This allows to estimate the dynamic range of the data set, but also to detect fainter tertiary components. fitMap stores the best fit in the dictionary bestFit, which key best contains the dictionary containing the parameters. Note that `o.bestFit['uncer']` contains the corresponding error bars.
+
+```
+>>> p = o.bestFit['best']
+>>> o.fitMap(fig=4, removeCompanion=p)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
  > observables: ['v2', 'icp']
  > Preliminary analysis
@@ -139,34 +160,13 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
  | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.02 (assumes uncorr data)
 ```
 
-![Figure 3](doc/figure_3.png)
-
-### ERROR BARS by bootstrapping:
-In order to better estimate the uncertainties on the companion we found, we can use bootstrapping to estimate the uncertainties around the best fit parameters. The default starting is the best fitted position: since we made a fit with an analytical removal of the companion, the currently stored companion is not the one found on Fig2; thankfully we stored it in the variable 'p'.
-
-On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
-
-```
->>> axcir.fitBoot(fig=4, param=p)
- > 'N=' not given, setting it to Ndata/2
- |================================================== |  99%   0 s remaining
- > sigma clipping in position and flux ratio for nSigmaClip= 3.5
- | 0 fits ignored
- |    diam* =   0.8002 + 0.0144 - 0.0153 mas
- |        f =   1.0483 + 0.0891 - 0.0895 %
- |        x =   6.2435 + 0.1029 - 0.1183 mas
- |        y = -28.5068 + 0.1419 - 0.1686 mas
-```
-
 ![Figure 4](doc/figure_4.png)
-
-FITBOOT, similar to FITMAP, accepts the `doNotFit=` input as a list of non-fitted parameters.
 
 ### DETECTION LIMIT, after analytically removing companion:
 We here remove the companion analytically from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
 
 ```
->>> axcir.detectionLimit(fig=5, step=1.5, removeCompanion=p)
+>>> o.detectionLimit(fig=5, step=1.5, removeCompanion=p)
  > step= not given, using 1/2 X smallest spatial scale = 1.34 mas
  > observables: ['v2', 'icp']
  > UD diam Fit
@@ -190,11 +190,11 @@ This will, for example, set the maximum computing time to 300s (instead of the d
 
 ## Performances
 
-Note that with the release of SciPy 1.9, `scipy.weave` has been phased out, hence CANDID has taken a hit in terms of performances by reversing to Numpy. Starting in version 0.3 of CANDID (early 2018), Cython is used to accelerate by a factor 2 over Numpy.
+Note that with the release of SciPy 1.9, `scipy.weave` has been phased out, hence CANDID has taken a hit in terms of performances by reversing to Numpy. Starting in version 0.3 of CANDID (early 2018), Cython is used to accelerate by a factor 2 over Numpy. It is not as fast as `scipy.weave` but still twice as fast as Numpy.
 
 ### Multiprocessing
 
-CANDID is parallelized and the number of core used can be set. By default, it will use all the cores but one (to spare you some CPU to do something else in the mean time): `candid.CONFIG['Ncores'] = None`. One can set manually how many cores to be used:
+CANDID is parallelized and the number of core used can be set. By default, it will use all the cores: `candid.CONFIG['Ncores'] = None`. One can set manually how many cores to be used:
 ```
 >>> candid.CONFIG['Ncores'] = 8
 ```
@@ -223,12 +223,12 @@ https://github.com/amerand/CANDID
 [Antoine Mérand](mailto:amerand-at-eso.org) and [Alexandre Gallenne](mailto:agallenn-at-eso.org)
 
 ### Python dependencies
-python2.7, numpy, scipy, matplotlib and pyfits (or astropy)
+Python 2.7 or 3.7, Numpy, Scipy, Matplotlib and astropy (for reading FITS files).
 
 
 ### LICENCE (BSD)
 
-Copyright (c) 2015-2017, Antoine Mérand
+Copyright (c) 2015-2018, Antoine Mérand
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
