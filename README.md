@@ -1,6 +1,6 @@
 # [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
 
-This is a suite of Python 2/3 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit.
+This is a suite of Python 2/3 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit. This code is presented in the article [Gallenne et al. 2015](http://adsabs.harvard.edu/abs/2015A%26A...579A..68G), although it has evolved slightly since the paper was published.
 
 To install, run:
 ```
@@ -12,7 +12,7 @@ it will compile the C source used in Cython, and install CANDID.
 
 ### Companion Search
 
-The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html)), with a grid for the starting points of the companion position. It ensures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum gride density (see example).
+The tool is based on model fitting and Chi2 minimization ([scipy.optimize.leastsq](http://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.optimize.leastsq.html)), with a grid for the starting points of the companion position. It ensures that all positions are explored by estimating a-posteriori if the grid was dense enough, and provide an estimate of the optimum grid density (see example).
 
 Note that if you use [LITpro](http://www.jmmc.fr/litpro_page.htm), you might find that the results given by CANDID are different:
 * In general, position of the found companion is the same for LITpro and CANDID
@@ -22,7 +22,7 @@ Note that if you use [LITpro](http://www.jmmc.fr/litpro_page.htm), you might fin
 It uses Chi2 statistics to estimate the level of detection in "number of sigmas".
 
 ### Non-Detection Limit
-There are two approaches implemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection [Gallenne et al. 2015](http://arxiv.org/abs/1505.02715).
+There are two approaches implemented: [Absil et al. 2011](http://adsabs.harvard.edu/abs/2011A%26A...535A..68A) and CANDID's Analytical Companion Injection [Gallenne et al. 2015](http://adsabs.harvard.edu/abs/2015A%26A...579A..68G).
 
 ## Known limitations
 
@@ -43,7 +43,7 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 The following example can be found in [axcir.py](axcir.py).
 
 * **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diameters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
-* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG3](doc/figure_3.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
+* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG4](doc/figure_4.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
 * **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](doc/figure_5.png)).
 
 **We strongly recommend you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
