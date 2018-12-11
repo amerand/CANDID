@@ -1064,7 +1064,7 @@ class Open:
         elif os.path.isdir(filename):
             print(' | loading FITS files in ', filename)
             files = os.listdir(filename)
-            files = filter(lambda x: ('.fit' in x.lower()) or ('.oifits' in x.lower()), files)
+            files = list(filter(lambda x: ('.fit' in x.lower()) or ('.oifits' in x.lower()), files))
             self._initOiData()
             for i,f in enumerate(files):
                 print(' | file %d/%d: %s'%(i+1, len(files), f))
