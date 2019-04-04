@@ -1990,8 +1990,7 @@ class Open:
             f['init'] = params[i]
         # -- keep only fits within range
         self.allFits = list(filter(lambda x: (x['best']['x']**2+x['best']['y']**2)>=self.rmin**2 and
-                                    (x['best']['x']**2+x['best']['y']**2)<=self.rmax**2, self.allFits))
-
+                                             (x['best']['x']**2+x['best']['y']**2)<=self.rmax**2, self.allFits))
 
         for i, f in enumerate(self.allFits):
             f['best']['f'] = np.abs(f['best']['f'])
@@ -2501,10 +2500,10 @@ class Open:
             for _k in self.dwavel.keys():
                 tmp['dwavel;'+_k] = self.dwavel[_k]
             tmp['_k'] = i
-
             # -- Bootstrap data:
             data = []
             for d in self._chi2Data:
+                # -- for each data file
                 data.append([_d if i==0 else _d.copy() for i,_d in enumerate(d)]) # recreate a list of data
                 if monteCarlo:
                     # -- Monte Carlo noise ----------------------------------------------------------
@@ -2516,9 +2515,9 @@ class Open:
                 else:
                     # -- Bootstrapping:
                     if useMJD:
-                        mask = d[-1]*0
+                        mask = np.zeros(d[-1].shape)
                         for j in selected:
-                            mask[d[-3]==j] += 1
+                            mask[np.abs(d[-3]-j)<1e-8] += 1
                     else:
                         mask = np.random.rand(d[-1].shape[-1])
                         mask = np.float_(mask>=1/3.) + np.float_(mask>=2/3.)
@@ -2582,24 +2581,39 @@ class Open:
         x = np.array([a['best']['x'] for a in self.allFits])
         y = np.array([a['best']['y'] for a in self.allFits])
         f = np.array([a['best']['f'] for a in self.allFits])
-
         d = np.array([a['best']['diam*'] for a in self.allFits])
+
         test = np.array([a['best']['x']!=param['x'] or
                          a['best']['y']!=param['y'] or
                          a['best']['f']!=param['f'] for a in self.allFits])
+        lims = 16, 84
+        print(' | All fits:')
+        print(' | x: %8.4f %8.4f %8.4f'%(np.percentile(x, 16),
+                                         np.percentile(x, 50),
+                                         np.percentile(x, 84)))
+        print(' | y: %8.4f %8.4f %8.4f'%(np.percentile(y, 16),
+                                         np.percentile(y, 50),
+                                         np.percentile(y, 84)))
+        print(' | f: %8.4f %8.4f %8.4f'%(np.percentile(f, 16),
+                                         np.percentile(f, 50),
+                                         np.percentile(f, 84)))
+        print(' | d: %8.4f %8.4f %8.4f'%(np.percentile(d, 16),
+                                         np.percentile(d, 50),
+                                         np.percentile(d, 84)))
 
-        w = np.where((x <= np.median(x) + nSigmaClip*(np.percentile(x, 84)-np.median(x)))*
-                     (x >= np.median(x) - nSigmaClip*(np.median(x)-np.percentile(x, 16)))*
-                     (y <= np.median(y) + nSigmaClip*(np.percentile(y, 84)-np.median(y)))*
-                     (y >= np.median(y) - nSigmaClip*(np.median(y)-np.percentile(y, 16)))*
-                     (f <= np.median(f) + nSigmaClip*(np.percentile(f, 84)-np.median(f)))*
-                     (f >= np.median(f) - nSigmaClip*(np.median(f)-np.percentile(f, 16)))*
-                     (d <= np.median(d) + nSigmaClip*(np.percentile(d, 84)-np.median(d)))*
-                     (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, 16)))*
+        w = np.where((x <= np.median(x) + nSigmaClip*(np.percentile(x, lims[1])-np.median(x)))*
+                     (x >= np.median(x) - nSigmaClip*(np.median(x)-np.percentile(x, lims[0])))*
+                     (y <= np.median(y) + nSigmaClip*(np.percentile(y, lims[1])-np.median(y)))*
+                     (y >= np.median(y) - nSigmaClip*(np.median(y)-np.percentile(y, lims[0])))*
+                     (f <= np.median(f) + nSigmaClip*(np.percentile(f, lims[1])-np.median(f)))*
+                     (f >= np.median(f) - nSigmaClip*(np.median(f)-np.percentile(f, lims[0])))*
+                     (d <= np.median(d) + nSigmaClip*(np.percentile(d, lims[1])-np.median(d)))*
+                     (d >= np.median(d) - nSigmaClip*(np.median(d)-np.percentile(d, lims[0])))*
                      test
                     )
         flag = np.ones(len(self.allFits), dtype=bool)
-        flag[w] = False
+        #flag[w] = False
+
         for i in range(len(self.allFits)):
             self.allFits[i]['sigma clipping flag'] = flag[i]
 
@@ -2709,7 +2723,10 @@ class Open:
                         med = np.mean(X)
                         errp = np.std(X)
                         errm = np.std(X)
-                        n = int(2-np.log10(errm))
+                        if errm>0:
+                            n = int(2-np.log10(errm))
+                        else:
+                            n = 4
                     print(' | %8s = %8.4f + %6.4f - %6.4f %s'%(k1,med,errp,errm, paramUnits(k1)))
                     if not fig is None:
                         ax[(i1,i1)] = plt.subplot(len(kz), len(kz), i1+len(kz)*i2+1)
@@ -3292,7 +3309,9 @@ def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
         pfix={'best':pfix, 'uncer':uncer,
               'chi2':reducedChi2, 'model':model,
               'fitOnly':fitOnly, 'info':info,
-              'cov':cov, 'cor':cor, 'covd':covd, 'cord':cord}
+              'cov':cov, 'cor':cor, 'covd':covd, 'cord':cord,
+              'x':x, 'y':y, 'err':err #
+              }
     return pfix
 
 def _dpfit_fitFunc(pfit, pfitKeys, x, y, err=None, func=None, pfix=None,
