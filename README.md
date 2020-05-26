@@ -65,7 +65,7 @@ The following example can be found in [axcir.py](axcir.py).
  | rmax= not given, set to Field of View: rmax=55.24 mas
 ```
 
-One might want to limit the observables and/or instrumental setups fitted. VLTI/GRAVITY data, for example, provide no meaningful closure amplitude. If our "o" variable was from a GRAVITY dataset, one should add `o.observables=['icp','v2']; o.instruments = ['SPECTRO_FT']` after opening the file in order to limit the following fits to phase closure and V2, as well as instrument to the fringe tracker (or `o.instruments = ['SPECTRO_SC']` for the science spectrograph, but very slow...).
+One might want to limit the observables and/or instrumental setups fitted. VLTI/GRAVITY data, for example, provide no meaningful closure amplitude. If our "o" variable was from a GRAVITY dataset, one should add `o.observables=['cp','v2']; o.instruments = ['SPECTRO_FT']` after opening the file in order to limit the following fits to phase closure and V2, as well as instrument to the fringe tracker (or `o.instruments = ['SPECTRO_SC']` for the science spectrograph, but very slow...).
 
 ### CHI2MAP: fitted diameter and fixed flux ratio=1%:
 The easiest thing to try is a chi2 map, assuming a certain flux ratio for the companion. This is quite inefficient but CANDID allows to do it. If no parametrization is given (step size 'step=', maximum radius for search 'rmax'), CANDID will guess some values based on the angular resolution and the wavelength smearing field of view. The flux ratio is given in percent.
@@ -73,7 +73,7 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
 ```
 >>> o.chi2Map(fig=1, fratio=1.0)
  > step= not given, using 1/4 X smallest spatial scale = 0.67 mas
- > observables: ['v2', 'icp']
+ > observables: ['v2', 'cp']
  > UD diam Fit
  | best fit diameter: 0.932 +- 0.006 mas
  | chi2 = 0.975
@@ -90,7 +90,7 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](
 ```
 >>> o.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
- > observables: ['v2', 'icp']
+ > observables: ['v2', 'cp']
  > Preliminary analysis
  > UD diam Fit
  | best fit diameter: 0.932 +- 0.006 mas
@@ -118,7 +118,7 @@ In order to better estimate the uncertainties on the companion we found, we can 
 On the correlations plots, the red dot with error bars is the fitted position; the blue ellipses are derived from the bootstrap (using a principal component analysis); the values given for each parameters are the median; the uncertainties are the 16% and 84% percentile (one sigma).
 
 ```
->>> o.fitBoot(fig=3, param=p)
+>>> o.fitBoot(fig=3)
  > 'N=' not given, setting it to Ndata/2
  |================================================== |  99%   0 s remaining
  > sigma clipping in position and flux ratio for nSigmaClip= 3.5
@@ -141,7 +141,7 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
 >>> p = o.bestFit['best']
 >>> o.fitMap(fig=4, removeCompanion=p)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
- > observables: ['v2', 'icp']
+ > observables: ['v2', 'cp']
  > Preliminary analysis
  > UD diam Fit
  | best fit diameter: 0.800 +- 0.006 mas
@@ -168,7 +168,7 @@ We here remove the companion analytically from the V2 and CP data. This is manda
 ```
 >>> o.detectionLimit(fig=5, step=1.5, removeCompanion=p)
  > step= not given, using 1/2 X smallest spatial scale = 1.34 mas
- > observables: ['v2', 'icp']
+ > observables: ['v2', 'cp']
  > UD diam Fit
  | best fit diameter: 0.800 +- 0.006 mas
  | chi2 = 0.739
@@ -212,7 +212,7 @@ Because not all computation are parallelized and there are some overheads due to
 |`fitMap`         | 1 | 3.5| 7 | 11 | 15 | 16 |
 |`detectionLimit` | 1 | 3.5| 6 |  8 |  9 | 10 |
 
-8 cores is hence a good compromise.
+8 cores is hence a good compromise. The gains match [Amdhal's law](https://en.wikipedia.org/wiki/Amdahl%27s_law) for 96% of `fitMap` being parallelized. The fraction for `detectionLimit` is roughly 92%.
 
 ## Informations
 

@@ -21,7 +21,11 @@ import scipy.special
 import scipy.interpolate
 import scipy.stats
 import scipy.optimize
-from scipy.misc import factorial
+try:
+    from scipy.misc import factorial
+except:
+    from scipy.special import factorial
+
 import random
 
 # -- defunct ;(
@@ -820,8 +824,8 @@ def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
     #p = np.maximum(p, -100)
     res = np.sqrt(scipy.stats.chi2.ppf(1-p,1))
     # x = np.logspace(-15,-12,100)
-    # c = np.polyfit(np.log10(x), np.sqrt(scipy.stats.chi2.ppf(1-x,53)), 1)
-    c = np.array([-0.25028407,  9.66640457])
+    # c = np.polyfit(np.log10(x), np.sqrt(scipy.stats.chi2.ppf(1-x,1)), 1)
+    c = np.array([-0.29842513,  3.55829518])
     if isinstance(res, np.ndarray):
         res[log10p<-15] = np.polyval(c, log10p[log10p<-15])
         res = np.nan_to_num(res)
@@ -1267,12 +1271,13 @@ class Open:
         # -- load all data:
         maxRes = 0.0 # -- in Mlambda
         #amberWLmin, amberWLmax = 1.8, 2.4 # -- K
-        #amberWLmin, amberWLmax = 1.4, 1.7 # -- H
+        #amberWLmin, amberWLmax = 1.3, 1.8 # -- H
         #amberWLmin, amberWLmax = 1.0, 1.3 # -- J
-        #amberWLmin, amberWLmax = 1.4, 2.5 # -- H+K
-        amberWLmin, amberWLmax = 1.0, 2.5 # -- J+H+K
+        #amberWLmin, amberWLmax = 1.0, 1.8 # -- J+H
+        amberWLmin, amberWLmax = 1.4, 2.5 # -- H+K
+        #amberWLmin, amberWLmax = 1.0, 2.5 # -- J+H+K
 
-        amberAtmBand = [1.0, 1.35, 1.87]
+        amberAtmBand = [1.0, 1.35, 1.9]
         for hdu in self._fitsHandler[1:]:
             if hdu.header['EXTNAME'] in ['OI_T3', 'OI_VIS2'] and testInst(hdu):
                 ins = hdu.header['INSNAME']
@@ -1290,12 +1295,12 @@ class Open:
                     err = np.array([np.array([e]) for e in err])
                 if 'AMBER' in ins:
                     print(' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmin)
-                    print(' | !!AMBER: rejecting CP WL<%3.1fum'%amberWLmax)
+                    print(' | !!AMBER: rejecting CP WL>%3.1fum'%amberWLmax)
                     wl = hdu.data['MJD'][:,None]*0+self.wavel[ins][None,:]
                     data[wl<amberWLmin] = np.nan
                     data[wl>amberWLmax] = np.nan
                     for b in amberAtmBand:
-                        data[np.abs(wl-b)<0.1] = np.nan
+                        data[np.abs(wl-b)<0.05] = np.nan
 
                 if not reducePoly is None:
                     p = []
@@ -2279,14 +2284,21 @@ class Open:
                                                      allMin2[i]['uncer'][s], paramUnits(s)))
                 else:
                     print(' | %6s='%s, '%8.4f [%s]'%(allMin2[i]['best'][s], paramUnits(s)))
+            # -- add sep and PA
+            sep = np.sqrt(allMin2[i]['best']['x']**2 + allMin2[i]['best']['y']**2)
+            PA = np.arctan2(allMin2[i]['best']['x'], allMin2[i]['best']['y'])
+            print(' %6s= %8.4fmas'%('sep', sep))
+            print(' %6s= %8.4fdeg'%('PA', PA*180/np.pi))
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print(' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD,
                                                                  allMin2[i]['chi2'],
                                                                  self.ndata()-1),end=' ')
             print('-> n sigma: %5.2f (assumes uncorr data)'%allMin2[i]['nsigma'])
-
-            _dpfit_dispCor(allMin2[i])
+            try:
+                _dpfit_dispCor(allMin2[i])
+            except:
+                print('cannot display correlation matrix')
 
             x0 = allMin2[i]['best']['x']
             ex0 = allMin2[i]['uncer']['x']
@@ -2379,7 +2391,7 @@ class Open:
         use "fitAlso" to list additional parameters you want to fit,
         channel spectra width for instance. fitAlso has to be a list!
 
-        - useMJD bootstraps on the dates, in addition to the spectrla channels. This is enabled by default.
+        - useMJD bootstraps on the dates, in addition to the spectral channels. This is enabled by default.
 
         - monteCarlo: uses a monte Carlo approches, rather than a statistical resampling:
             all data are considered but with random errors added. An additional dict can be added to describe
@@ -2568,6 +2580,7 @@ class Open:
                                 right=0.98, top=0.95,
                                 wspace=0.3, hspace=0.3)
 
+        self.allFits = [a for a in self.allFits if 'best' in a and 'fitOnly' in a]
         kz = self.allFits[0]['fitOnly']
         kz.sort()
         # -- also show chi2 histogram:
@@ -2790,8 +2803,9 @@ class Open:
             pass
         for _k in self.dwavel.keys():
             param['dwavel;'+_k] = self.dwavel[_k]
-
-        _meas, _errs, _uv, _types, _wl = _generateFitData(self._rawData,
+        print(' (plotting _chi2Data instead of _rawData)')
+        _meas, _errs, _uv, _types, _wl = _generateFitData(#self._rawData,
+                                                          self._chi2Data,
                                                           self.observables,
                                                           self.instruments)
         _mod = _modelObservables(list(filter(lambda c: c[0].split(';')[0] in self.observables
