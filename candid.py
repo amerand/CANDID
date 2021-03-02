@@ -67,7 +67,8 @@ import sys
 #__version__ = '1.0 | 2018/11/08'  # Converted to Python3
 #__version__ = '1.0.1 | 2019/01/18'# implement curve_fit to include correlated errors
 #__version__ = '1.0.2 | 2019/03/01'# many tweaks in the plots; x>0 fit only for only v2; implement history
-__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
+#__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
+__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
 
 
 print("""
@@ -2382,7 +2383,7 @@ class Open:
 
     def fitBoot(self, N=None, param=None, fig=2, fitAlso=None, doNotFit=[], useMJD=True,
                 monteCarlo=False, corrSpecCha=None, nSigmaClip=4.5, addCompanion=None,
-                removeCompanion=None):
+                removeCompanion=None, debug=False):
         """
         boot strap fitting around a single position. By default,
         the position is the best position found by fitMap. It can also been entered
@@ -2505,6 +2506,7 @@ class Open:
 
         print('')
         t0 = time.time()
+        allMasks = []
         for i in range(N): # -- looping fits
             if useMJD:
                 selected = [mjds[np.random.randint(len(mjds))] for i in range(len(mjds))]
@@ -2514,6 +2516,8 @@ class Open:
             tmp['_k'] = i
             # -- Bootstrap data:
             data = []
+            if useMJD:
+                allMasks.append(tuple(sorted(selected)))
             for d in self._chi2Data:
                 # -- for each data file
                 data.append([_d if i==0 else _d.copy() for i,_d in enumerate(d)]) # recreate a list of data
@@ -2546,6 +2550,7 @@ class Open:
                         data[-1][-1] = data[-1][-1]/mask[None,:]
                     else:
                         data[-1][-1] = data[-1][-1]/mask
+                    data[-1][-1] = np.nan_to_num(data[-1][-1], nan=1e8)
 
             if p is None:
                 # -- single thread:
@@ -2560,6 +2565,8 @@ class Open:
             p.close()
             p.join()
 
+        if debug:
+            print('debug: %d different data masks'%len(set(allMasks)))
         print(' | grid of fit took %.1f seconds'%(time.time()-t0))
 
         if not fig is None:
@@ -2600,7 +2607,7 @@ class Open:
                          a['best']['y']!=param['y'] or
                          a['best']['f']!=param['f'] for a in self.allFits])
         lims = 16, 84
-        print(' | All fits:')
+        print(' | All fits [N=%d] 16, 50 and 84%% percentiles:'%len(x))
         print(' | x: %8.4f %8.4f %8.4f'%(np.percentile(x, 16),
                                          np.percentile(x, 50),
                                          np.percentile(x, 84)))
@@ -2625,7 +2632,6 @@ class Open:
                      test
                     )
         flag = np.ones(len(self.allFits), dtype=bool)
-        #flag[w] = False
 
         for i in range(len(self.allFits)):
             self.allFits[i]['sigma clipping flag'] = flag[i]
@@ -2769,6 +2775,9 @@ class Open:
                 else:
                     if (i1, i2) in ax.keys():
                         ax[(i1,i2)].xaxis.set_visible(False)
+        if not fig is None:
+            plt.tight_layout()
+            plt.subplots_adjust(wspace=0., hspace=0.)
 
         _dpfit_dispCor({'fitOnly':refFit['fitOnly'], 'cord':cord})
         self.bootRes = res
@@ -3332,7 +3341,7 @@ def _dpfit_leastsqFit(func, x, params, y, err=None, fitOnly=None, verbose=False,
             cord = None
         pfix={'best':pfix, 'uncer':uncer,
               'chi2':reducedChi2, 'model':model,
-              'fitOnly':fitOnly, 'info':info,
+              'fitOnly':fitOnly, 'info':info, 'mesg':mesg,
               'cov':cov, 'cor':cor, 'covd':covd, 'cord':cord,
               'x':x, 'y':y, 'err':err #
               }
