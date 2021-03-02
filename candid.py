@@ -66,7 +66,8 @@ import sys
 #__version__ = '0.3.1 | 2018/02/04'# Cython acceleration
 #__version__ = '1.0 | 2018/11/08'  # Converted to Python3
 #__version__ = '1.0.1 | 2019/01/18'# implement curve_fit to include correlated errors
-__version__ = '1.0.2 | 2019/03/01'# many tweaks in the plots; x>0 fit only for only v2; implement history
+#__version__ = '1.0.2 | 2019/03/01'# many tweaks in the plots; x>0 fit only for only v2; implement history
+__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
 
 
 print("""
@@ -207,7 +208,7 @@ def _VbinSlow(uv, param):
         fg = 0.0
         phig = 0.0
 
-    dl = np.linspace(-0.5,0.5, CONFIG['Nsmear'])
+    dl = np.linspace(-0.5, 0.5, CONFIG['Nsmear'])
 
     if CONFIG['Nsmear']<2:
         dl = np.array([0.])
@@ -1254,7 +1255,6 @@ class Open:
                                                         self.wlOffset + self.wavel[hdu.header['INSNAME']].max())
                 self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
 
-                self.all_dwavel[hdu.header['INSNAME']] *= 2. # assume the limit is not the pixel
                 self.dwavel[hdu.header['INSNAME']] = \
                         np.mean(self.all_dwavel[hdu.header['INSNAME']])
             if hdu.header['EXTNAME']=='OI_ARRAY':
@@ -1405,8 +1405,8 @@ class Open:
                                    +(hdu.data['U1COORD']+hdu.data['V2COORD'])**2).max())
                 Bmax = np.sqrt(Bmax)
                 maxRes = max(maxRes, Bmax/self.wavel[ins].min())
-                self.smearFov = min(self.smearFov, 2*self.wavel[ins].min()**2/self.dwavel[ins]/Bmax*180*3.6/np.pi)
-                self.diffFov = min(self.diffFov, 1.2*self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
+                self.smearFov = min(self.smearFov, self.wavel[ins].min()**2/self.dwavel[ins]/Bmax*180*3.6/np.pi)
+                self.diffFov = min(self.diffFov, self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
 
             if hdu.header['EXTNAME']=='OI_VIS2' and testInst(hdu):
                 data = hdu.data['VIS2DATA']
@@ -1463,7 +1463,7 @@ class Open:
                 Bmax = np.sqrt(Bmax)
                 maxRes = max(maxRes, Bmax/self.wavel[ins].min())
                 self.smearFov = min(self.smearFov, self.wavel[ins].min()**2/self.dwavel[ins]/Bmax*180*3.6/np.pi)
-                self.diffFov = min(self.diffFov, 1.2*self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
+                self.diffFov = min(self.diffFov, self.wavel[ins].min()/self.telArray[arr]*180*3.6/np.pi)
 
         self.minSpatialScale = min(1e-6/maxRes*180*3600*1000/np.pi, self.minSpatialScale)
         print(' | Smallest spatial scale:    %7.2f mas'%(self.minSpatialScale))
@@ -2137,13 +2137,11 @@ class Open:
         # print('### DEBUG:', sys.maxsize, len(allMin)**2*Nx*Ny,end=' ')
         # print(len(allMin)**2*Nx*Ny < sys.maxsize)
 
-        dx = (R[1]-R[0]+np.diff(R)[0])/Nx
-        dy = (R[1]-R[0]+np.diff(R)[0])/Ny
-
-        _X, _Y = np.meshgrid(np.linspace(X[0]-np.diff(X)[0]/2.,
-                                         X[-1]+np.diff(X)[0]/2., Nx),
-                             np.linspace(Y[0]-np.diff(Y)[0]/2.,
-                                         Y[-1]+np.diff(Y)[0]/2., Ny))
+        _x = np.linspace(X[0]-np.diff(X)[0]/2., X[-1]+np.diff(X)[0]/2., Nx)
+        _y = np.linspace(Y[0]-np.diff(Y)[0]/2., Y[-1]+np.diff(Y)[0]/2., Ny)
+        _X, _Y = np.meshgrid(_x, _y)
+        dx = np.mean(np.diff(_x))
+        dy = np.mean(np.diff(_y))
 
         print(' | Rbf interpolating: %d points -> %d pixels map'%(len(allMin), Nx*Ny))
         if CONFIG['chi2 scale']!='auto':
@@ -2202,13 +2200,13 @@ class Open:
             ax1 = plt.subplot(1,2,1)
             if chi2Scale=='log':
                 plt.title('log10[$\chi^2$ best fit / $\chi^2_{UD}$]')
-                plt.pcolormesh(_X,#-dx,
-                               _Y,#-dy,
+                plt.pcolormesh(_X-dx/2,
+                               _Y-dy/2,
                                _Z-np.log10(self.chi2_UD), cmap=CONFIG['color map']+'_r')
             else:
                 plt.title('$\chi^2$ best fit / $\chi^2_{UD}$')
-                plt.pcolormesh(_X,#-dx,
-                               _Y,#-dy,
+                plt.pcolormesh(_X-dx/2,
+                               _Y-dy/2,
                                _Z/self.chi2_UD, cmap=CONFIG['color map']+'_r')
 
             plt.colorbar(format='%0.2f')
@@ -2237,8 +2235,8 @@ class Open:
             #                    np.log10(n_sigma), cmap=CONFIG['color map'], vmin=0)
             # else:
             plt.title('n$\sigma$ of detection')
-            plt.pcolormesh(_X,#-dx,
-                           _Y,#-dy,
+            plt.pcolormesh(_X-dx/2,
+                           _Y-dy/2,
                            n_sigma, cmap=CONFIG['color map'], vmin=0)
             plt.colorbar(format='%0.2f')
 
@@ -2284,11 +2282,13 @@ class Open:
                                                      allMin2[i]['uncer'][s], paramUnits(s)))
                 else:
                     print(' | %6s='%s, '%8.4f [%s]'%(allMin2[i]['best'][s], paramUnits(s)))
+
             # -- add sep and PA
             sep = np.sqrt(allMin2[i]['best']['x']**2 + allMin2[i]['best']['y']**2)
             PA = np.arctan2(allMin2[i]['best']['x'], allMin2[i]['best']['y'])
-            print(' %6s= %8.4fmas'%('sep', sep))
-            print(' %6s= %8.4fdeg'%('PA', PA*180/np.pi))
+            print(' | for information: ')
+            print(' | %6s= %8.4fmas'%('sep', sep))
+            print(' | %6s= %8.4fdeg'%('PA', PA*180/np.pi))
 
             # -- http://www.aanda.org/articles/aa/pdf/2011/11/aa17719-11.pdf section 3.2
             print(' | chi2r_UD=%4.2f, chi2r_BIN=%4.2f, NDOF=%d'%(self.chi2_UD,
@@ -2633,7 +2633,7 @@ class Open:
         result['internal']['all fits'] = self.allFits
 
         print(' | %d fits ignored'%(len(x)-len(w[0])))
-        Nbins = int(np.sqrt(len(w[0])/2.5))
+        Nbins = int(np.sqrt(len(w[0])/2.5))+1
         ax = {}
         res['boot'] = {}
         res['ellipse'] = {}
@@ -2844,21 +2844,30 @@ class Open:
                 res = np.float_(res)
                 _measw = np.angle(_meas[w]).real
                 _modw = np.angle(_mod[w]).real
+                # -- model
                 plt.plot(X, 180/np.pi*(np.mod(_modw+np.pi/2, np.pi)-np.pi/2)+oCP*offset,
-                        '.k', alpha=0.4)
-                plt.scatter(X, 180/np.pi*(np.mod(_measw+np.pi/2,np.pi)-np.pi/2)+oCP*offset,
-                            c=_wl[w], marker=marker, cmap='hot_r',
-                            alpha=0.5, linestyle=linestyle)
+                        '.b', alpha=0.4)
+                # -- data
                 plt.errorbar(X, 180/np.pi*(np.mod(_measw+np.pi/2, np.pi)-np.pi/2) +oCP*offset,
-                            fmt=',', yerr=180/np.pi*_errs[w], marker=None, color='k', alpha=0.2)
+                            fmt='.', yerr=180/np.pi*_errs[w], marker=None, color='k', alpha=0.2,
+                            label='data')
+                #plt.scatter(X, 180/np.pi*(np.mod(_measw+np.pi/2,np.pi)-np.pi/2)+oCP*offset,
+                #            c=_wl[w], marker=marker, cmap='hot_r',
+                #            alpha=0.5, linestyle=linestyle)
+                #plt.errorbar(X, 180/np.pi*(np.mod(_measw+np.pi/2, np.pi)-np.pi/2) +oCP*offset,
+                #             fmt=',', yerr=180/np.pi*_errs[w], marker=None, color='k', alpha=0.2)
                 plt.ylabel(t.split(';')[0]+r': deg, mod 180')
             else:
                 res = (_meas[w]-_mod[w])/_errs[w]
-                plt.errorbar(X, _meas[w]+oV2*offset, fmt=',', yerr=_errs[w], marker=None,
-                             color='k', alpha=0.2)
-                plt.scatter(X, _meas[w]+oV2*offset, c=_wl[w], marker=marker, cmap='hot_r',
-                        alpha=0.5, linestyle=linestyle)
-                plt.plot(X, _mod[w]+oV2*offset, '.k', alpha=0.4)
+                # -- data
+                plt.errorbar(X, _meas[w]+oV2*offset, fmt='.', yerr=_errs[w], marker=None,
+                            color='k', alpha=0.2, label='data')
+                #plt.errorbar(X, _meas[w]+oV2*offset, fmt=',', yerr=_errs[w], marker=None,
+                #             color='k', alpha=0.2)
+                #plt.scatter(X, _meas[w]+oV2*offset, c=_wl[w], marker=marker, cmap='hot_r',
+                #            alpha=0.5, linestyle=linestyle)
+                # -- model
+                plt.plot(X, _mod[w]+oV2*offset, '.b', alpha=0.4)
                 plt.ylabel(t.split(';')[0])
                 if t.split(';')[0]=='v2':
                     plt.ylim(-0.1, 1.1+np.max(offset)*oV2)
@@ -2873,6 +2882,7 @@ class Open:
 
             plt.ylabel('residuals ($\sigma$)')
             plt.ylim(-np.max(np.abs(plt.ylim())), np.max(np.abs(plt.ylim())))
+        plt.tight_layout()
         return
 
     def _cb_nsigmaFunc(self, r):
