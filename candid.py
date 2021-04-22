@@ -2110,7 +2110,8 @@ class Open:
             Naf *= 2
 
         if len(allMin)/Naf>0.6 or\
-             2*self.rmax/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
+             #2*self.rmax/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
+             2*np.sqrt(self.rmax**2-self.rmin**2)/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
             print(' > WARNING, grid is too wide!!!', end=' ')
             print('--> try step=%4.2fmas'%(self.stepOptFitMap))
             reliability = 'unreliable'
