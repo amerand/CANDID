@@ -68,7 +68,8 @@ import sys
 #__version__ = '1.0.1 | 2019/01/18'# implement curve_fit to include correlated errors
 #__version__ = '1.0.2 | 2019/03/01'# many tweaks in the plots; x>0 fit only for only v2; implement history
 #__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
-__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
+#__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
+__version__ = '1.0.5 | 2021/04/26' # bug in nSigma! not bad in practice
 
 
 print("""
