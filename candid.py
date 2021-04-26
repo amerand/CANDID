@@ -821,9 +821,18 @@ def _nSigmas(chi2r_TEST, chi2r_TRUE, NDOF):
 
     returns the nSigma detection
     """
+    q = scipy.stats.chi2.cdf(NDOF*chi2r_TEST/chi2r_TRUE, NDOF)
+    p = 1.0-q
+    nsigma = np.sqrt(scipy.stats.chi2.ppf(1-p, 1))
+    if isinstance(nsigma, np.ndarray):
+        nsigma[p<1e-15] = np.sqrt(scipy.stats.chi2.ppf(1-1e-15, 1))
+    elif p<1e-15:
+        nsigma = np.sqrt(scipy.stats.chi2.ppf(1-1e-15, 1))
+    return nsigma
+
+    # == THIS IS WRONG !? ==================
     p = scipy.stats.chi2.cdf(NDOF, NDOF*chi2r_TEST/chi2r_TRUE)
     log10p = np.log10(np.maximum(p, 1e-161)) ### Alex: 50 sigmas max
-    #p = np.maximum(p, -100)
     res = np.sqrt(scipy.stats.chi2.ppf(1-p,1))
     # x = np.logspace(-15,-12,100)
     # c = np.polyfit(np.log10(x), np.sqrt(scipy.stats.chi2.ppf(1-x,1)), 1)
@@ -2110,7 +2119,6 @@ class Open:
             Naf *= 2
 
         if len(allMin)/Naf>0.6 or\
-             #2*self.rmax/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
              2*np.sqrt(self.rmax**2-self.rmin**2)/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
             print(' > WARNING, grid is too wide!!!', end=' ')
             print('--> try step=%4.2fmas'%(self.stepOptFitMap))
