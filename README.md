@@ -2,7 +2,7 @@
 
 This is a suite of Python 2/3 tools to find faint companion around star in interferometric data in the [OIFITS format](http://www.mrao.cam.ac.uk/research/optical-interferometry/oifits/). This tool allows to systematically search for faint companions in OIFITS data, and if not found, estimates the detection limit. This code is presented in the article [Gallenne et al. 2015](http://adsabs.harvard.edu/abs/2015A%26A...579A..68G), although it has evolved slightly since the paper was published.
 
-WARNING: before version 1.0.5 (April 2021), there is a bug in the computation of the statistical significance: the computation are correct below ~4 sigmas, but get progressively overestimated, to double by 14 sigma. In practice, this does not change results, as the significance is only important around or below 4 sigmas.
+WARNING: before version 1.0.5 (April 2021), there is a bug in the computation of the statistical significance: the computation are correct below ~4 sigmas, but get progressively overestimated, to double by 14 sigma. In practice, this does not change results, as the significance is only important around or below 4 sigmas. Also, note that the number of sigma cannot go above ~8 with the new (and correct) formula.
 
 To install, run:
 ```
