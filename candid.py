@@ -69,7 +69,8 @@ import sys
 #__version__ = '1.0.2 | 2019/03/01'# many tweaks in the plots; x>0 fit only for only v2; implement history
 #__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
 #__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
-__version__ = '1.0.5 | 2021/04/26' # bug in nSigma! not bad in practice
+#__version__ = '1.0.5 | 2021/04/26' # bug in nSigma! not bad in practice
+__version__ = '1.0.6 | 2022/01/21' # tweaking default step, rmin and rmax
 
 
 print("""
@@ -1413,7 +1414,7 @@ class Open:
                 Bmax = (hdu.data['U1COORD']**2+hdu.data['V1COORD']**2).max()
                 Bmax = max(Bmax, (hdu.data['U2COORD']**2+hdu.data['V2COORD']**2).max())
                 Bmax = max(Bmax, ((hdu.data['U1COORD']+hdu.data['U2COORD'])**2
-                                   +(hdu.data['U1COORD']+hdu.data['V2COORD'])**2).max())
+                                   +(hdu.data['V1COORD']+hdu.data['V2COORD'])**2).max())
                 Bmax = np.sqrt(Bmax)
                 maxRes = max(maxRes, Bmax/self.wavel[ins].min())
                 self.smearFov = min(self.smearFov, self.wavel[ins].min()**2/self.dwavel[ins]/Bmax*180*3.6/np.pi)
@@ -1775,10 +1776,12 @@ class Open:
 
         if CONFIG['chi2 scale']=='log':
             tit = 'log10[$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$] with $\chi^2_\mathrm{UD}$='
-            plt.pcolormesh(X, Y, np.log10(self.mapChi2/self.chi2_UD), cmap=CONFIG['color map'])
+            plt.pcolormesh(X, Y, np.log10(self.mapChi2/self.chi2_UD),
+                            cmap=CONFIG['color map'], shading='auto')
         else:
             tit = '$\chi^2_\mathrm{BIN}/\chi^2_\mathrm{UD}$ with $\chi^2_\mathrm{UD}$='
-            plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD, cmap=CONFIG['color map'])
+            plt.pcolormesh(X, Y, self.mapChi2/self.chi2_UD,
+                            cmap=CONFIG['color map'], shading='auto')
         if self.chi2_UD>0.05:
             tit += '%4.2f'%(self.chi2_UD)
         else:
@@ -1800,7 +1803,8 @@ class Open:
                        _nSigmas(self.chi2_UD,
                                 np.minimum(self.mapChi2, self.chi2_UD),
                                 self.ndata()),
-                       cmap=CONFIG['color map'])
+                       cmap=CONFIG['color map'],
+                       shading='auto')
         plt.colorbar(format='%0.2f')
         plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
 
@@ -1853,19 +1857,19 @@ class Open:
                   'result':{}}
 
         if step is None:
-            step = np.sqrt(2)*self.minSpatialScale
-            print(' | step= not given, using sqrt(2) x smallest spatial scale = %4.2f mas'%step)
+            step = self.minSpatialScale
+            print(' | step= not given, using smallest spatial scale = %4.2f mas'%step)
         result['call']['step']=step
         if rmin is None:
             self.rmin = self.minSpatialScale
-            print(" | rmin= not given, set to smallest spatial scale: rmin=%5.2f mas"%(self.rmin))
+            print(" | rmin= not given, set to smallest spatial scale: rmin=%4.2f mas"%(self.rmin))
         else:
             self.rmin = rmin
         result['call']['rmin']=self.rmin
 
         if rmax is None:
-            self.rmax = 1.2*self.smearFov
-            print(" | rmax= not given, set to 1.2*Field of View (bandwidth smearing): rmax=%5.2f mas"%(self.rmax))
+            self.rmax = self.smearFov
+            print(" | rmax= not given, set to Field of View (bandwidth smearing): rmax=%5.2f mas"%(self.rmax))
         else:
             self.rmax = rmax
         result['call']['rmax']=self.rmax
@@ -2109,19 +2113,21 @@ class Open:
                                 np.percentile([f['dist'] for f in self.allFits], 10),
                                 np.percentile([f['dist'] for f in self.allFits], 50),
                                 np.percentile([f['dist'] for f in self.allFits], 90),))
-
+        print(' | grid step was %.1f mas'%step)
         self.Nopt = self.rmax/np.nanmedian([f['dist'] for f in self.allFits])*np.sqrt(2)
         self.Nopt = max(np.sqrt(2*len(allMin)), self.Nopt)
         self.Nopt = int(np.ceil(self.Nopt))
         self.stepOptFitMap = 2*self.rmax/self.Nopt
         result['internal']['optimum step'] = self.stepOptFitMap
         Naf = len(self.allFits)
-        if self.observables==['v2']:
-            Naf *= 2
-
-        if len(allMin)/Naf>0.6 or\
-             2*np.sqrt(self.rmax**2-self.rmin**2)/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
-            print(' > WARNING, grid is too wide!!!', end=' ')
+        #if self.observables==['v2']:
+        #    Naf *= 2 #
+        print(' | %.1f fit per minima'%(Naf/len(allMin)))
+        print(' | optimum? %.1f mas'%np.sqrt(np.pi*(self.rmax**2-self.rmin**2)/len(allMin)))
+        #if Naf/len(allMin)<2 or\
+        #     2*np.sqrt(self.rmax**2-self.rmin**2)/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
+        if Naf/len(allMin)<1.5:
+            print(' > WARNING, grid may be too wide!', end=' ')
             print('--> try step=%4.2fmas'%(self.stepOptFitMap))
             reliability = 'unreliable'
         elif N>1.2*self.Nopt:
@@ -2137,9 +2143,13 @@ class Open:
         result['result']['reliability'] = reliability
 
         # == plot chi2 min map:
-        # -- limited in 32 but, hacking something dirty:
-        Nx = 2*len(R)+1
-        Ny = 2*len(R)+1
+        # -- limited in 32 bit, hacking something dirty:
+        #Nx = 2*len(R)+1
+        #Ny = 2*len(R)+1
+
+        Nx = 2*int(self.rmax/step)+1
+        Ny = 2*int(self.rmax/step)+1
+
         if len(allMin)**2*Nx*Ny >= sys.maxsize:
             # -- interpolation grid is too large
             Nx = int(np.sqrt(sys.maxsize/(len(allMin)**2)))-1
@@ -2213,12 +2223,14 @@ class Open:
                 plt.title('log10[$\chi^2$ best fit / $\chi^2_{UD}$]')
                 plt.pcolormesh(_X-dx/2,
                                _Y-dy/2,
-                               _Z-np.log10(self.chi2_UD), cmap=CONFIG['color map']+'_r')
+                               _Z-np.log10(self.chi2_UD),
+                               cmap=CONFIG['color map']+'_r', shading='auto')
             else:
                 plt.title('$\chi^2$ best fit / $\chi^2_{UD}$')
                 plt.pcolormesh(_X-dx/2,
                                _Y-dy/2,
-                               _Z/self.chi2_UD, cmap=CONFIG['color map']+'_r')
+                               _Z/self.chi2_UD,
+                               cmap=CONFIG['color map']+'_r', shading='auto')
 
             plt.colorbar(format='%0.2f')
             if reliability=='unreliable':
@@ -2248,7 +2260,8 @@ class Open:
             plt.title('n$\sigma$ of detection')
             plt.pcolormesh(_X-dx/2,
                            _Y-dy/2,
-                           n_sigma, cmap=CONFIG['color map'], vmin=0)
+                           n_sigma, cmap=CONFIG['color map'], vmin=0,
+                           shading='auto')
             plt.colorbar(format='%0.2f')
 
             if reliability=='unreliable':
@@ -2798,7 +2811,7 @@ class Open:
                             'covd':covd, 'cord':cord, 'fitOnly':refFit['fitOnly']}
         self.history.append(result)
         return
-        # -_-_-
+        # -- end of "fitBoot"
 
     def plotModel(self, param=None, fig=3, spectral=False):
         """
@@ -2953,8 +2966,8 @@ class Open:
             self.rmin = rmin
 
         if rmax is None:
-            self.rmax = 1.2*self.smearFov
-            print(" | rmax= not given, set to 1.2*Field of View: rmax=%5.2f mas"%(self.rmax))
+            self.rmax = self.smearFov
+            print(" | rmax= not given, set to smearing Field of View: rmax=%5.2f mas"%(self.rmax))
         else:
             self.rmax = rmax
         self._estimateNsmear()
@@ -3083,7 +3096,7 @@ class Open:
                 #plt.pcolormesh(X, Y, self.allf3s[m], cmap=CONFIG['color map'],
                 #    vmin=vmin, vmax=vmax)
                 plt.pcolormesh(X, Y, -2.5*np.log10(self.allf3s[m]/100.), cmap=CONFIG['color map'],
-                    vmin=vmin, vmax=vmax)
+                    vmin=vmin, vmax=vmax, shading='auto')
                 plt.colorbar()
                 plt.xlabel(r'E $\leftarrow\, \Delta \alpha$ (mas)')
                 plt.ylabel(r'$\Delta \delta\, \rightarrow$ N (mas)')
