@@ -35,6 +35,12 @@ import random
 
 
 import multiprocessing
+try:
+    # -- see https://stackoverflow.com/questions/64174552
+    multiprocessing.set_start_method('spawn')
+except:
+    pass
+
 import os
 import sys
 
@@ -70,16 +76,8 @@ import sys
 #__version__ = '1.0.3 | 2020/10/27'# corrected over-estimation of smearing
 #__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
 #__version__ = '1.0.5 | 2021/04/26' # bug in nSigma! not bad in practice
-__version__ = '1.0.6 | 2022/01/21' # tweaking default step, rmin and rmax
-
-
-print("""
-========================== This is CANDID ==============================
-[C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
-                  https://github.com/amerand/CANDID
-========================================================================
-""")
-print(' version:', __version__)
+#__version__ = '1.0.6 | 2022/01/21' # tweaking default step, rmin and rmax
+__version__ = '1.0.7 | 2022/08/16' # avoid reprint in multiprocessing
 
 # -- some general parameters:
 CONFIG = {'color map':'cubehelix', # color map used
@@ -111,7 +109,16 @@ def variables():
         print("  CONFIG['%s']"%k, CONFIG[k])
     return
 
-variables()
+__spec__ = None
+if __name__=='__main__':
+    print("""
+    ========================== This is CANDID ==============================
+    [C]ompanion [A]nalysis and [N]on-[D]etection in [I]nterferometric [D]ata
+                      https://github.com/amerand/CANDID
+    ========================================================================
+    """)
+    print(' version:', __version__)
+    variables()
 
 __warningDwavel = True
 
@@ -211,10 +218,23 @@ def _VbinSlow(uv, param):
         fg = 0.0
         phig = 0.0
 
-    dl = np.linspace(-0.5, 0.5, CONFIG['Nsmear'])
-
-    if CONFIG['Nsmear']<2:
+    if CONFIG['Nsmear']<=2:
         dl = np.array([0.])
+        Tr = np.array([1.0])
+    elif CONFIG['Nsmear']==3:
+        # -- original implementation, with top-hat transmission (slow and a little innacurate)
+        dl = np.linspace(-0.5, 0.5, CONFIG['Nsmear'])
+        Tr = np.ones(CONFIG['Nsmear'])
+    else: # -- gaussian
+        tsigma = 1/2.355 # FWHM of 1
+        #tsigma /=  0.57282 # FWH Maximum -> FWH Flux,
+        # -- takes most of the Gaussian transmission
+        dl = np.linspace(-0.8, 0.8, CONFIG['Nsmear'])
+        Tr = np.exp(-dl**2/(2*tsigma**2))
+    Tr /= np.sum(Tr)
+
+
+    # -- Lachaume and
 
     if np.isscalar(param['wavel'] ):
         wl = param['wavel']+dl*param['dwavel']
@@ -226,15 +246,15 @@ def _VbinSlow(uv, param):
         else:
             phig = phig[:,None]/wl[None,:]
             tmp += fg*Vg[:,None]*np.exp(-1j*phig)
-        res = (Vstar[:,None] + tmp)/(1.0 + f + fres + fg)
-        res = res.mean(axis=1)
+        tmp *= Tr[None,:]
+        # -- compute smearing
+        res = (Vstar + tmp.sum(axis=1))/(1.0 + f + fres + fg)
     else:
         # -- assumes u, v, and wavel are 2D
         wl = param['wavel'][:,:,None] + dl[None,None,:]*param['dwavel']
         phi = 2*np.pi*c*(uv[0][:,:,None]*param['x']+uv[1][:,:,None]*param['y'])/wl
-
         if not np.isscalar(Vcomp):
-            Vcomp = Vcomp[:,:,None]*(1.+0*wl)
+            Vcomp = Vcomp[:,:,None]
         tmp = f*Vcomp*np.exp(-1j*phi)
         if not np.isscalar(phig):
             phig = phig[:,:,None]/wl
@@ -243,7 +263,9 @@ def _VbinSlow(uv, param):
         if not np.isscalar(Vg):
             Vg = Vg[:,:,None]/(1+0*wl)
         tmp += fg*Vg*np.exp(-1j*phig)
-        res = (Vstar + tmp.mean(axis=2))/(1.0 + f + fres + fg)
+        tmp *= Tr[None,None,:]
+        # -- mean to compute smearing
+        res = (Vstar + tmp.sum(axis=2))/(1.0 + f + fres + fg)
     return res
 
 try:
@@ -288,11 +310,13 @@ try:
                      diam, diamc)
         return np.reshape(Vr+1j*Vi, uv[0].shape)
     _Vbin = _VbinCy
-    print('Using Cython visibilities computation (Faster than Numpy)')
+    if __name__=='__main__':
+        print('Using Cython visibilities computation (Faster than Numpy)')
 except:
     # -- Using Numpy visibility function
     _Vbin = _VbinSlow
-    print('Using Numpy visibilities computation (Slower than Cython)')
+    if __name__=='__main__':
+        print('Using Numpy visibilities computation (Slower than Cython)')
 
 def _V2binSlow(uv, param):
     """
@@ -1266,9 +1290,10 @@ class Open:
                                                         self.wlOffset + self.wavel[hdu.header['INSNAME']].mean(),
                                                         self.wlOffset + self.wavel[hdu.header['INSNAME']].max())
                 self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
-
                 self.dwavel[hdu.header['INSNAME']] = \
                         np.mean(self.all_dwavel[hdu.header['INSNAME']])
+                print(' | EFF_BAND/gradient(EFF_WAVE)', hdu.header['INSNAME'], '~',
+                    '%.3f'%np.mean(hdu.data['EFF_BAND']/np.gradient(hdu.data['EFF_WAVE'])))
             if hdu.header['EXTNAME']=='OI_ARRAY':
                 name = hdu.header['ARRNAME']
                 diam = hdu.data['DIAMETER'].mean()
@@ -1428,7 +1453,6 @@ class Open:
                 if len(err.shape)==1:
                     err = np.array([np.array([e]) for e in err])
                 data[hdu.data['FLAG']] = np.nan # we'll deal with that later...
-
                 data /= self.v2bias
 
                 if 'AMBER' in ins:
@@ -1463,7 +1487,8 @@ class Open:
                           hdu.data['MJD'],
                           np.array([x['A'+str(j)] for x in p]),
                           np.array([x['A'+str(j)] for x in ep])])
-                print('KLUDGE on V2 err')
+
+                #print('KLUDGE on V2 err') ???
                 self._rawData.append(['v2;'+ins,
                       hdu.data['UCOORD'][:,None]+0*self.wavel[ins][None,:],
                       hdu.data['VCOORD'][:,None]+0*self.wavel[ins][None,:],
@@ -1556,9 +1581,11 @@ class Open:
                 c[0].split(';')[1] in self.instruments:
                 _dwavel = np.append(_dwavel, np.ones(c[-2].shape).flatten()*
                                         self.dwavel[c[0].split(';')[1]])
+        #print('_dwavel=', _dwavel)
         res = (_uv*self.rmax/(_wl-0.5*_dwavel)-_uv*self.rmax/(_wl+0.5*_dwavel))*0.004848136
         #print('DEBUG:', res)
         CONFIG['Nsmear'] = max(int(np.ceil(4*res.max())), 3)
+        #CONFIG['Nsmear'] = max(int(np.ceil(8*res.max())), 3)
         print(' | setting up Nsmear = %d'%CONFIG['Nsmear'])
         return
 
@@ -1914,7 +1941,11 @@ class Open:
         if self._dataheader!={}:
             print('found injected companion at', self._dataheader)
 
-        self.fitUD()
+        if type(addParam)== dict and 'diam*' in addParam:
+            self.fitUD(guess=addParam['diam*'])
+        else:
+            self.fitUD()
+
         if self.chi2_UD ==0:
             print(' >>> chi2_UD==0 ???, setting it to 1.')
             self.chi2_UD =1
@@ -2113,7 +2144,6 @@ class Open:
                                 np.percentile([f['dist'] for f in self.allFits], 10),
                                 np.percentile([f['dist'] for f in self.allFits], 50),
                                 np.percentile([f['dist'] for f in self.allFits], 90),))
-        print(' | grid step was %.1f mas'%step)
         self.Nopt = self.rmax/np.nanmedian([f['dist'] for f in self.allFits])*np.sqrt(2)
         self.Nopt = max(np.sqrt(2*len(allMin)), self.Nopt)
         self.Nopt = int(np.ceil(self.Nopt))
@@ -2122,8 +2152,8 @@ class Open:
         Naf = len(self.allFits)
         #if self.observables==['v2']:
         #    Naf *= 2 #
-        print(' | %.1f fit per minima'%(Naf/len(allMin)))
-        print(' | optimum? %.1f mas'%np.sqrt(np.pi*(self.rmax**2-self.rmin**2)/len(allMin)))
+        print(' | %.1f fit per minima with step %.2f'%(Naf/len(allMin), step))
+        print(' | minima density: %.1f mas'%np.sqrt(np.pi*(self.rmax**2-self.rmin**2)/len(allMin)))
         #if Naf/len(allMin)<2 or\
         #     2*np.sqrt(self.rmax**2-self.rmin**2)/float(N)*np.sqrt(2)/2 > np.percentile([f['dist'] for f in self.allFits], 66):
         if Naf/len(allMin)<1.5:
@@ -2289,7 +2319,7 @@ class Open:
                     result['result']['best fit']['uncer'].pop('_k')
                 bestNsigma=allMin2[i]['nsigma']
 
-            print(' | BEST FIT %d: chi2=%5.2f'%(ii, allMin2[i]['chi2']))
+            print(' | BEST FIT %d: chi2=%.4f'%(ii, allMin2[i]['chi2']))
             allMin2[i]['best']['f'] = np.abs(allMin2[i]['best']['f'] )
             keys = list(allMin2[i]['best'].keys())
             if '_k' in keys:
@@ -2399,8 +2429,6 @@ class Open:
             for s in tmp:
                 print(' | %5s='%s, '%8.4f +- %6.4f %s'%(fit['best'][s], fit['uncer'][s],
                                                         paramUnits(s)))
-
-
         self.history.append(result)
         return
 
