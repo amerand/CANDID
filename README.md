@@ -48,6 +48,11 @@ The following example can be found in [axcir.py](candid/demo/axcir.py).
 * **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](candid/doc/figure_5.png)).
 
 
+To run the demo, you can do:
+```
+>>> import candid.demo.axcir
+>>> candid.demo.axcir.runAll()
+```
 
 ### Open OIFITS file with CANDID:
 
