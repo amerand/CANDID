@@ -3,6 +3,9 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 
+[tool.setuptools.package-data]
+candid = ["demo/*.oifits"]
+
 [project]
 name = "candid"
 version = "1.0.7"
