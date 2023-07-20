@@ -41,7 +41,7 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 
 ## Examples:
 
-The following example can be found in [axcir.py](axcir.py).
+The following example can be found in [axcir.py](candid/demo/axcir.py).
 
 * **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diameters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](candid/doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
 * **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](candid/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG4](candid/doc/figure_4.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
