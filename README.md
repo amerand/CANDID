@@ -47,7 +47,7 @@ The following example can be found in [axcir.py](candid/demo/axcir.py).
 * **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](candid/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG4](candid/doc/figure_4.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
 * **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](candid/doc/figure_5.png)).
 
-**We strongly recommend you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
+
 
 ### Open OIFITS file with CANDID:
 
