@@ -44,9 +44,9 @@ The code has *not* been deeply error proofed. If you encounter problems or bugs,
 
 The following example can be found in [axcir.py](axcir.py).
 
-* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diameters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
-* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG4](doc/figure_4.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
-* **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](doc/figure_5.png)).
+* **chi2 Maps**. These are useful because fast, but dangerous because it is easy to miss a companion just using those. On FIG1 and FIG2, we show to runs for different diameters and flux ratio: either the diameter is fitted to the V2 data ([FIG1](candid/doc/figure_1.png)). The chi2 map shows a minimum only if the grid if fine enough (the structure in the map should be clear, not pixelated) but also if the parameters (inc. the flux ratio) are very close to the actual ones.
+* **fit Maps**. These are **MUCH** better, but slower than chi2 maps. If V2 are present, the diameter will be fitted ([FIG2](candid/doc/figure_2.png)). Note that once a companion is found, it can be removed analytically from the data and the fit map ran again ([FIG4](candid/doc/figure_4.png)): this demonstrates that, in the case of our example, the secondary "detections" are only artifact from the main companion.
+* **detection limits**. We implemented 2 methods; Absil's and our companion injection ([Gallenne et al. 2015](http://arxiv.org/abs/1505.02715)). Note that they give slightly different results: we argue that our method is more robust to correlated noise (read our paper!). When you have detected a companion and wish to estimate the detection limit, it is important to first remove the companion ([FIG5](candid/doc/figure_5.png)).
 
 **We strongly recommend you use plain python2.7, instead of iPython, because of the bad interactions between iPython and the multiprocessing library, which makes the estimation of the running time very unreliable.**
 
@@ -84,11 +84,11 @@ The easiest thing to try is a chi2 map, assuming a certain flux ratio for the co
  | at X,Y  :   6.38, -28.55 mas
  | NDOF=1499  > n sigma detection:  0.99 (fully uncorrelated errors)
 ```
-![Figure 1](doc/figure_1.png)
+![Figure 1](candid/doc/figure_1.png)
 
 
 ### FITMAP:
-Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](doc/figure_1.png)). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size `step=`. In our example below, we let CANDID chose the step size, based on the angular resolution of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
+Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](candid/doc/figure_1.png)). In a FITMAP, a set of binary fits are performed starting from a 2D grid of companion position. The plot displays the interpolated map of the chi2 minima (left), with the path of the fit, from start to finish (yellow lines). FITMAP will compute, a posteriori, what was the correct step size `step=`. In our example below, we let CANDID chose the step size, based on the angular resolution of the data (1.2 wavelength/baseline). The companion is detected at the same position as for the previous example, with a much better dynamic range.
 ```
 >>> o.fitMap(fig=2)
  > step= not given, using sqrt(2) x smallest spatial scale = 3.78 mas
@@ -110,7 +110,7 @@ Doing a grid of fit is much more efficient than doing a simple Chi2 Map ([FIG1](
  | diam*=   0.8007 +- 0.0088 mas
  | chi2r_UD=0.98, chi2r_BIN=0.73, NDOF=1499 -> n sigma: 14.37 (assumes uncorr data)
 ```
-![Figure 2](doc/figure_2.png)
+![Figure 2](candid/doc/figure_2.png)
 
 FITMAP allows to provide additional parameters, as well as fixing parameters in the fit. Additional parameters are passed using `addParam={'diamc':0.5, 'fres':0.1}` for a resolved flux of 10% (of the centra star's flux) and a companion angular diameter of 0.5mas. If ones want to prevent fitting parameters, `doNotFit=['fres', 'diamc']`.
 
@@ -131,7 +131,7 @@ On the correlations plots, the red dot with error bars is the fitted position; t
  |        y = -28.5068 + 0.1419 - 0.1686 mas
 ```
 
-![Figure 3](doc/figure_3.png)
+![Figure 3](candid/doc/figure_3.png)
 
 FITBOOT, similar to FITMAP, accepts the `doNotFit=` input as a list of non-fitted parameters.
 
@@ -162,7 +162,7 @@ CANDID offers the possibility, once a companion has been detected, to remove it 
  | chi2r_UD=0.74, chi2r_BIN=0.69, NDOF=1499 -> n sigma:  2.02 (assumes uncorr data)
 ```
 
-![Figure 4](doc/figure_4.png)
+![Figure 4](candid/doc/figure_4.png)
 
 ### DETECTION LIMIT, after analytically removing companion:
 We here remove the companion analytically from the V2 and CP data. This is mandatory in order to estimate the detection limit: the statistical hypothesis of the test is that the data are best described by a uniform disk.
@@ -180,7 +180,7 @@ We here remove the companion analytically from the V2 and CP data. This is manda
  > Method: injection
  |================================================== | 99%   0 s remaining
 ```
-![Figure 5](doc/figure_5.png)
+![Figure 5](candid/doc/figure_5.png)
 
 ### CONFIG parameters
 
@@ -225,7 +225,7 @@ https://github.com/amerand/CANDID
 [Antoine Mérand](mailto:amerand-at-eso.org) and [Alexandre Gallenne](mailto:agallenn-at-eso.org)
 
 ### Python dependencies
-Python 2.7 or 3.7, Numpy, Scipy, Matplotlib and astropy (for reading FITS files).
+Python >=3.7, Numpy, Scipy, Matplotlib and astropy (for reading FITS files).
 
 
 ### LICENCE (BSD)

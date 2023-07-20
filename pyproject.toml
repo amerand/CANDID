@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "candid"
+version = "1.0.7"
+requires-python = ">=3.7"
+readme = "README.md"
+authors = [
+    {name = "Antoine Mérand", email = "amerand@eso.org"},
+    {name = "Alexandre Gallenne"},
+]
+dependencies = [
+    "scipy", "numpy", "matplotlib", "astropy",
+]
+
+
+
