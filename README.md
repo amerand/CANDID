@@ -6,9 +6,8 @@ WARNING: before version 1.0.5 (April 2021), there is a bug in the computation of
 
 To install, run:
 ```
-python setup.py install --user
+python3 -m pip install .  
 ```
-it will compile the C source used in Cython, and install CANDID. You may need to install `cython` manually.
 
 ## What does it do for you?
 
