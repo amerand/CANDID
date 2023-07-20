@@ -4,7 +4,7 @@ This is a suite of Python 2/3 tools to find faint companion around star in inter
 
 WARNING: before version 1.0.5 (April 2021), there is a bug in the computation of the statistical significance: the computation are correct below ~4 sigmas, but get progressively overestimated, to double by 14 sigma. In practice, this does not change results, as the significance is only important around or below 4 sigmas. Also, note that the number of sigma cannot go above ~8 with the new (and correct) formula.
 
-To install, run:
+To install, run in the top directory (containing [pyproject.toml](pyproject.toml)):
 ```
 python3 -m pip install .  
 ```
