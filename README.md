@@ -9,6 +9,11 @@ To install, run:
 python3 -m pip install .  
 ```
 
+To remove CANDID:
+```
+python3 -m pip uninstall candid
+```
+
 ## What does it do for you?
 
 ### Companion Search
