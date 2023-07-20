@@ -77,7 +77,9 @@ import sys
 #__version__ = '1.0.4 | 2021/03/02' # bug with bootstraping
 #__version__ = '1.0.5 | 2021/04/26' # bug in nSigma! not bad in practice
 #__version__ = '1.0.6 | 2022/01/21' # tweaking default step, rmin and rmax
-__version__ = '1.0.7 | 2022/08/16' # avoid reprint in multiprocessing
+#__version__ = '1.0.7 | 2022/08/16' # avoid reprint in multiprocessing
+__version__ = '1.1.0 | 2023/07/20' # new installer
+
 
 # -- some general parameters:
 CONFIG = {'color map':'cubehelix', # color map used

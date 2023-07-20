@@ -8,7 +8,7 @@ candid = ["demo/*.oifits"]
 
 [project]
 name = "candid"
-version = "1.0.7"
+version = "1.1.0"
 requires-python = ">=3.7"
 readme = "README.md"
 authors = [
