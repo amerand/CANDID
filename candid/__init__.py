@@ -1294,7 +1294,7 @@ class Open:
                 self.all_dwavel[hdu.header['INSNAME']] = hdu.data['EFF_BAND']*1e6
                 self.dwavel[hdu.header['INSNAME']] = \
                         np.mean(self.all_dwavel[hdu.header['INSNAME']])
-                if type(hdu.data['EFF_WAVE'])==np.ndarray:
+                if type(hdu.data['EFF_WAVE'])==np.ndarray and len(hdu.data['EFF_WAVE'])>1:
                     print(' | EFF_BAND/gradient(EFF_WAVE)', hdu.header['INSNAME'], '~',
                         '%.3f'%np.mean(hdu.data['EFF_BAND']/np.gradient(hdu.data['EFF_WAVE'])))
                 else:
